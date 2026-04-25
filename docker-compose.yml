@@ -1,31 +1,4 @@
 services:
-  tailscale:
-    image: tailscale/tailscale:latest
-    container_name: ts-race-authkey-container
-    hostname: race-engineer-dashboard-tailscale-service
-    environment:
-      - TS_CLIENT_ID=${TS_CLIENT_ID:-}
-      - TS_CLIENT_SECRET=${TS_CLIENT_SECRET:-}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=false
-      - TS_AUTH_ONCE=true
-      - TS_EXTRA_ARGS=--advertise-tags=tag:ros-device --ssh=true
-      - TS_ENABLE_HEALTH_CHECK=true
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9002/healthz"]
-      interval: 2s
-      timeout: 5s
-      retries: 30
-      start_period: 10s
-    volumes:
-      - ts-authkey-container:/var/lib/tailscale
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    ports:
-      - "8000:8000"
-
   backend:
     build:
       context: ./backend
@@ -34,14 +7,12 @@ services:
     environment:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-14}
       - ROS_LOCALHOST_ONLY=0
-      - DISCOVERY_SERVER_IP=${TAILSCALE_IP:-100.110.98.26}
-      - TAILSCALE_IP=${TAILSCALE_IP:-100.110.98.26}
+      - JETSON_LAN_IP=${JETSON_LAN_IP:-192.168.1.2}
+      - DISCOVERY_SERVER_IP=${DISCOVERY_SERVER_IP:-}
+      - ROSBAG_API_URL=${ROSBAG_API_URL:-}
+      - ROSBAG_API_HOST=${ROSBAG_API_HOST:-}
       - ROSBAG_API_PORT=${ROSBAG_API_PORT:-8080}
-      - RACEGPT_URL=${RACEGPT_URL:-http://100.110.39.54:8000/analyze}
-    depends_on:
-      tailscale:
-        condition: service_healthy
-    network_mode: service:tailscale
+    network_mode: host
 
   frontend:
     build:
@@ -60,9 +31,6 @@ services:
     networks:
       - app-network
 
-volumes:
-  ts-authkey-container:
-    driver: local
 
 networks:
   app-network:

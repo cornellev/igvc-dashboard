@@ -232,8 +232,8 @@ class SocketService {
       console.warn(
         `[ROS] Error: no data received for >${this.DATA_TIMEOUT_MS / 1000}s. possible reasons:` +
           `\n- ros publisher is not publishing` +
-          `\n- tailscale connection is not working properly` +
-          `\n- you are not using the correct fastdds discovery server ip address`,
+          `\n- laptop and publisher are not on the same LAN` +
+          `\n- you are not using the correct Fast DDS discovery server LAN IP address`,
       );
     }, this.DATA_TIMEOUT_MS);
   }

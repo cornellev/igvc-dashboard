@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI service that subscribes to the ROS 2 `spi_data` topic and streams snapshots to the frontend over WebSocket. It also proxies rosbag control requests and forwards RaceGPT requests to the RaceGPT analysis service.
+FastAPI service that subscribes to the ROS 2 `spi_data` topic and streams snapshots to the frontend over WebSocket. It also proxies rosbag control requests.
 
 ## Running the backend
 
@@ -24,13 +24,13 @@ From the project root:
 docker compose up --build
 ```
 
-The backend shares the Tailscale service network and is exposed on port `8000`.
+The backend uses host networking so ROS 2/DDS traffic can use the laptop's LAN interface.
+It is exposed on port `8000` on the laptop.
 
 ## Main endpoints
 
 - `GET /` basic health response
 - `WS /ws/stream` live telemetry stream for the frontend
-- `POST /racegpt` forwards telemetry to RaceGPT and returns the response
 - `POST /bag/start`, `POST /bag/stop`, and `GET /bag/status` proxy rosbag controls
 - `GET /healthz` reports backend and remote bag-service health
 
@@ -38,7 +38,8 @@ The backend shares the Tailscale service network and is exposed on port `8000`.
 
 - `ROS_DOMAIN_ID` must match the publisher's DDS domain
 - `ROS_LOCALHOST_ONLY` controls whether ROS discovery is localhost-only
-- `DISCOVERY_SERVER_IP` is used for Fast DDS discovery setup in Docker
-- `TAILSCALE_IP` is used for remote rosbag API requests
-- `RACEGPT_WS_URI` is the websocket endpoint for RaceGPT
-- `RACEGPT_CONNECT_TIMEOUT_SEC`, `RACEGPT_RESPONSE_TIMEOUT_SEC`, and `RACEGPT_REQUEST_TIMEOUT_SEC` control RaceGPT timeouts
+- `JETSON_LAN_IP` is the Jetson's LAN address on the router network
+- `DISCOVERY_SERVER_IP` optionally overrides `JETSON_LAN_IP` for Fast DDS discovery
+- `ROSBAG_API_URL` optionally sets the full rosbag API base URL
+- `ROSBAG_API_HOST` optionally overrides `JETSON_LAN_IP` for remote rosbag API requests
+- `ROSBAG_API_PORT` is the rosbag API port

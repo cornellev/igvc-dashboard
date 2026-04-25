@@ -13,14 +13,12 @@ from rclpy.executors import SingleThreadedExecutor
 from subscriber import DataSubscriber
 from contextlib import asynccontextmanager
 import math
-import racegpt as racegpt_module
 import httpx
 
 from rosbag_replay import parse_rosbag_to_csv_rows
 
 DEQUE_SIZE = 1000 # for snapshot
 SAMPLE_RATE_HZ = 40  # rate at which we send data to frontend
-RACEGPT_REQUEST_TIMEOUT_SEC = float(os.getenv("RACEGPT_REQUEST_TIMEOUT_SEC", "20"))
 
 def sanitize_json(x):
     if isinstance(x, float):
@@ -164,8 +162,6 @@ async def lifespan(app: FastAPI):
         app.state.broadcaster_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.broadcaster_task
-        
-        await racegpt_module.close()
 
         app.state.node.destroy_node()
         rclpy.shutdown()
@@ -187,8 +183,23 @@ def root():
     return {"message": "Race Telemetry API", "status": "running"}
 
 def get_remote_bag_base_url() -> str:
-    tailscale_ip = os.getenv("TAILSCALE_IP")
-    return f"http://{tailscale_ip}:8080"
+    configured_url = os.getenv("ROSBAG_API_URL")
+    if configured_url:
+        return configured_url.rstrip("/")
+
+    host = (
+        os.getenv("ROSBAG_API_HOST")
+        or os.getenv("JETSON_LAN_IP")
+        or os.getenv("DISCOVERY_SERVER_IP")
+    )
+    if not host:
+        raise HTTPException(
+            status_code=503,
+            detail="Set ROSBAG_API_HOST or JETSON_LAN_IP to reach the rosbag API.",
+        )
+
+    port = os.getenv("ROSBAG_API_PORT", "8080")
+    return f"http://{host}:{port}"
 
 async def forward_bag_request(method: str, path: str) -> Response:
     url = f"{get_remote_bag_base_url()}{path}"
@@ -201,25 +212,6 @@ async def forward_bag_request(method: str, path: str) -> Response:
         status_code=remote_response.status_code,
         media_type=content_type,
     )
-
-racegpt_lock = asyncio.Lock()
-
-@app.post("/racegpt")
-async def racegpt(data: dict):
-    if racegpt_lock.locked():
-        raise HTTPException(status_code=409, detail="RaceGPT reasoning already in progress")
-
-    async with racegpt_lock:
-        try:
-            print("called race-gpt...",flush=True)
-            response = await racegpt_module.get_response(data)
-        except RuntimeError as exc:
-            message = str(exc)
-            if "timed out" in message.lower():
-                raise HTTPException(status_code=504, detail="RaceGPT device did not respond") from exc
-            raise HTTPException(status_code=502, detail="RaceGPT request failed") from exc
-
-    return response
 
 @app.post("/bag/start")
 async def bag_start():
