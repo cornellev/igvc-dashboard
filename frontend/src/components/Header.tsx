@@ -35,7 +35,7 @@ export default function Header(props: {
               props.setSideBar(!props.sideBar);
             }}
           >
-            RaceGPT
+            Telemetry
           </a>
           <a
             type="button"

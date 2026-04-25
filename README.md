@@ -12,7 +12,7 @@ Ajay, Donte, Eric, Shreyaa
 
 ## Summary
 
-Live telemetry and analysis for the car: sensor streams (with filtering), derived run metrics, optional **RaceGPT** insights in a sidebar, and a browser-based replay mode for uploaded telemetry exports.
+Live telemetry and analysis for the car: sensor streams (with filtering), derived run metrics, a telemetry sidebar, and a browser-based replay mode for uploaded telemetry exports.
 
 **Sensor views**
 
@@ -34,12 +34,6 @@ Live telemetry and analysis for the car: sensor streams (with filtering), derive
 - **Energy Use** calculated from power
 - **Efficiency** instantaneous and average over a run
 
-**RaceGPT**
-
-- Configurable manual or automatic LLM requests **that analyze recent telemetry data and return verdicts on improving performance**
-
----
-
 ## Getting Started
 
 1. **Running the Project**
@@ -52,10 +46,6 @@ Live telemetry and analysis for the car: sensor streams (with filtering), derive
 
    The frontend client UI should be running on `port 3000`.  
    The backend healthcheck endpoint is on the root of `port 8000`.
-
-   Integration with RaceGPT is done over a websocket connection to a machine running
-   RaceGPT. Connect your machine to the RaceGPT host, and the dashboard should
-   connect when built.
 
 2. **Frontend Testing**
 
@@ -92,27 +82,15 @@ Live telemetry and analysis for the car: sensor streams (with filtering), derive
 
 ## ROS Subscriber Data
 
-For the ROS2 subscriber, first get the ROS2 publisher IP address from:
+For the ROS 2 subscriber over LAN, connect the laptop and Jetson to the same router
+network and set the Jetson's LAN IP in `.env`:
 
 ```sh
-ssh cev@<daq tailscale ip> "docker exec ts-authkey-container tailscale ip" | head -n1
+JETSON_LAN_IP=192.168.1.2
 ```
 
-Make sure this matches the ip in the `docker-compose.yml` file.
-
-We set it manually, not via env var, because the publisher IP should not change.
-
-## RaceGPT Integration
-
-Connect your machine to another machine running **RaceGPT** so the dashboard can
-reach the RaceGPT websocket service and request analysis on live telemetry snapshots.
-
-As mentioned above, there are two modes for requesting responses on the sidebar.
-
-- Manually request LLM responses (5s buffer between responses)
-- Automatically request and display LLM responses based on a set frequency >5s
-
----
+Use `DISCOVERY_SERVER_IP` only if the Fast DDS discovery server is on a different
+LAN address than `JETSON_LAN_IP`.
 
 ## Replay Mode
 
@@ -164,8 +142,6 @@ skipped during import.
 
 ```
 ROS2 Sensors → Backend (Python + ROS2) → WebSocket Stream → Frontend (React + TypeScript + Bun)
-                                          ↓
-                                  RaceGPT Integration
 
 Uploaded CSV → Frontend Replay Parser → Replay Timeline → Shared Dashboard Widgets
 Uploaded ROS bag `.db3` → Backend Bag Parser → Replay Timeline → Shared Dashboard Widgets
@@ -173,21 +149,9 @@ Uploaded ROS bag `.db3` → Backend Bag Parser → Replay Timeline → Shared Da
 
 ---
 
-## RaceGPT Integration Flow
-
-RaceGPT is integrated as an **on-demand analysis layer**.
-
-1. The frontend sends telemetry history to the backend via a POST request
-2. The backend forwards this data over a **USB WebSocket connection** to the RaceGPT machine (`/ws/analyze`)
-3. RaceGPT processes the data and returns a **verdict/analysis**
-4. The backend relays the response back to the frontend
-5. The frontend displays the result in the sidebar (manual or automatic modes)
-
----
-
 ## ROSbag + Remote Data Handling
 
 - The frontend can trigger ROSbag recording via `/bag` endpoints
-- The backend communicates with the DAQ machine through **Tailscale**
+- The backend communicates with the DAQ machine over the router LAN
 - ROSbag files are stored remotely for later analysis and replay
 - Local dashboard replay supports uploaded CSV telemetry exports and rosbag2 SQLite `.db3` files
