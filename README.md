@@ -1,8 +1,8 @@
-# Race Engineer Dashboard
+# Intelligent Ground Vehicle Competition (IGVC) Dashboard
 
 ## Team Members
 
-Donte & Adi
+Ajay, Donte, Eric, Shreyaa
 
 ---
 
