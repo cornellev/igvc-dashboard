@@ -7,6 +7,7 @@ import SignalTile from "../components/SignalTile";
 import EmptyTelemetryState from "../components/EmptyTelemetryState";
 import CompactChart from "../components/CompactChart";
 import GaugePointer from "../components/GaugePointer";
+import CameraFeed from "../components/CameraFeed";
 import type { SocketData } from "../utils/Socket";
 import { LinearProgress } from "@mui/material";
 import {
@@ -668,6 +669,20 @@ export default function InteractiveGrid({
             </div>
           </SignalTile>
         </div>
+      </DashboardCard>
+
+      <DashboardCard
+        className="min-h-60 lg:col-span-6 lg:min-h-72"
+        title="Camera (Left)"
+      >
+        <CameraFeed side="left" />
+      </DashboardCard>
+
+      <DashboardCard
+        className="min-h-60 lg:col-span-6 lg:min-h-72"
+        title="Camera (Right)"
+      >
+        <CameraFeed side="right" />
       </DashboardCard>
     </div>
   );

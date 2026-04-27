@@ -5,3 +5,5 @@ asyncio
 pyserial
 httpx
 rosbags
+opencv-python-headless
+numpy

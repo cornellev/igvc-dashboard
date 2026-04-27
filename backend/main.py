@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from subscriber import DataSubscriber
+from camera_subscriber import CameraSubscriber
 from contextlib import asynccontextmanager
 import math
 import httpx
@@ -81,6 +82,21 @@ def ros_spin_loop(node: DataSubscriber, stop_evt: threading.Event, history: coll
         ex.remove_node(node)
         print("[ROS] spin loop exited", flush=True)
 
+def camera_spin_loop(nodes: list, stop_evt: threading.Event):
+    ex = SingleThreadedExecutor()
+    for node in nodes:
+        ex.add_node(node)
+    try:
+        while rclpy.ok() and not stop_evt.is_set():
+            try:
+                ex.spin_once(timeout_sec=0.05)
+            except Exception as e:
+                print(f"[CAM] ERROR: {e}", flush=True)
+    finally:
+        for node in nodes:
+            ex.remove_node(node)
+        print("[CAM] spin loop exited", flush=True)
+
 # broadcasts new messages to all clients without re-collecting ROS message per client
 # use a single producer to wait for next snapshot and then broadcast to all active sockets
 async def broadcaster(app: FastAPI):
@@ -135,6 +151,13 @@ async def lifespan(app: FastAPI):
         print(f"[ROS] ERROR: failed to create subscriber for '{topic}': {e}", flush=True)
         raise
 
+    try:
+        app.state.camera_left = CameraSubscriber('zed/left/image_raw', 'camera_left')
+        app.state.camera_right = CameraSubscriber('zed/right/image_raw', 'camera_right')
+    except Exception as e:
+        print(f"[CAM] ERROR: failed to create camera subscribers: {e}", flush=True)
+        raise
+
     # create stop signal before starting ROS thread
     app.state.stop_evt = threading.Event()
 
@@ -152,18 +175,28 @@ async def lifespan(app: FastAPI):
     # start ROS thread
     app.state.ros_thread.start()
 
+    app.state.camera_thread = threading.Thread(
+        target=camera_spin_loop,
+        args=([app.state.camera_left, app.state.camera_right], app.state.stop_evt),
+        daemon=True
+    )
+    app.state.camera_thread.start()
+
     app.state.broadcaster_task = asyncio.create_task(broadcaster(app))
     try:
         yield
     finally:
         app.state.stop_evt.set()
         app.state.ros_thread.join(timeout=5.0)
+        app.state.camera_thread.join(timeout=5.0)
 
         app.state.broadcaster_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.broadcaster_task
 
         app.state.node.destroy_node()
+        app.state.camera_left.destroy_node()
+        app.state.camera_right.destroy_node()
         rclpy.shutdown()
 
 app = FastAPI(lifespan=lifespan)
@@ -275,15 +308,33 @@ async def replay_rosbag(
 async def websocket_stream(websocket: WebSocket):
     await websocket.accept()
     app.state.clients.add(websocket)
-    
+
     try:
         # keep socket alive; data is pushed from broadcaster
         while True:
             await asyncio.sleep(60)
     except WebSocketDisconnect:
         pass
-    finally: 
+    finally:
         app.state.clients.discard(websocket)
+
+@app.websocket("/ws/camera/{side}")
+async def websocket_camera(websocket: WebSocket, side: str):
+    if side not in ("left", "right"):
+        await websocket.close(code=1008)
+        return
+
+    await websocket.accept()
+    node = app.state.camera_left if side == "left" else app.state.camera_right
+
+    try:
+        while True:
+            jpeg = node.get_latest_jpeg()
+            if jpeg is not None:
+                await websocket.send_bytes(jpeg)
+            await asyncio.sleep(1 / 30)
+    except WebSocketDisconnect:
+        pass
 
 if __name__ == "__main__":
     import uvicorn
