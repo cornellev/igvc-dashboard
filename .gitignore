@@ -9,3 +9,5 @@ frontend/data/*
 .DS_Store
 backend/__pycache__
 .codex
+.venv
+venv
