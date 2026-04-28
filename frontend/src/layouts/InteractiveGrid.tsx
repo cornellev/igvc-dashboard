@@ -8,6 +8,11 @@ import EmptyTelemetryState from "../components/EmptyTelemetryState";
 import CompactChart from "../components/CompactChart";
 import GaugePointer from "../components/GaugePointer";
 import CameraFeed from "../components/CameraFeed";
+import {
+  AutonomyControlButton,
+  RosbagControlButton,
+  ToggleControlButton,
+} from "../components/RunControlButtons";
 import type { SocketData } from "../utils/Socket";
 import { LinearProgress } from "@mui/material";
 import {
@@ -83,8 +88,6 @@ export default function InteractiveGrid({
     message: "",
     timerId: null,
   });
-
-  const [disabled, setDisabled] = useState<number | null>(null);
 
   const [runSession, setRunSession] = useState<RunSessionState>({
     startTimestamp: null,
@@ -248,109 +251,77 @@ export default function InteractiveGrid({
     });
   }, [data, runSession.isRunning, runSession.lastProcessedTimestamp]);
 
-  const toggleRunTracking = async () => {
-    if (disabled) clearTimeout(disabled);
+  const showWarning = (message: string) => {
+    if (warn.timerId) clearTimeout(warn.timerId);
 
-    setDisabled(
-      setTimeout(() => {
-        setDisabled(null);
-      }, 4000),
-    );
+    setWarn({
+      value: true,
+      message,
+      timerId: window.setTimeout(() => {
+        setWarn((prev) => {
+          return { ...prev, value: false, timerId: null };
+        });
+      }, 1500),
+    });
+  };
 
-    if (disabled) {
-      const warnMessage = "Stop spamming the fucking button";
-      console.warn(warnMessage);
-
-      if (warn.timerId) clearTimeout(warn.timerId);
-
-      setWarn({
-        value: true,
-        message: warnMessage,
-        timerId: setTimeout(() => {
-          setWarn((prev) => {
-            return { ...prev, value: false, timerId: null };
-          });
-        }, 1000),
-      });
-      return;
-    }
-
-    if (latestTimestamp === null && !runSession.isRunning) {
+  const canStartRunTracking = () => {
+    if (latestTimestamp === null) {
       console.warn("Cannot start run tracking without any telemetry data");
+      showWarning("No data to record");
+      return false;
+    }
 
-      if (warn.timerId) clearTimeout(warn.timerId);
+    return true;
+  };
 
-      setWarn({
-        value: true,
-        message: "No data to record",
-        timerId: setTimeout(() => {
-          setWarn((prev) => {
-            return { ...prev, value: false, timerId: null };
-          });
-        }, 1000),
-      });
+  const startRunTracking = () => {
+    if (latestTimestamp === null) {
       return;
     }
 
-    const updateRunSession = () => {
-      setRunSession((previous) => {
-        if (previous.isRunning) {
-          return {
-            ...previous,
-            isRunning: false,
-          };
-        }
+    const startingAverage = instantEfficiency;
+    const startingLatitude = latest?.gps.lat ?? null;
+    const startingLongitude = latest?.gps.long ?? null;
 
-        const startingAverage = instantEfficiency;
-        const startingLatitude = latest?.gps.lat ?? null;
-        const startingLongitude = latest?.gps.long ?? null;
+    const hasValidStartingGps =
+      startingLatitude !== null &&
+      startingLongitude !== null &&
+      isValidGpsCoordinate(startingLatitude, startingLongitude);
 
-        const hasValidStartingGps =
-          startingLatitude !== null &&
-          startingLongitude !== null &&
-          isValidGpsCoordinate(startingLatitude, startingLongitude);
+    setRunSession({
+      startTimestamp: latestTimestamp,
+      isRunning: true,
+      average: startingAverage,
+      sampleCount: startingAverage === null ? 0 : 1,
+      lastProcessedTimestamp: latestTimestamp,
+      distanceMeters: 0,
+      energyKilowattHours: 0,
+      lastGpsLatitude: hasValidStartingGps ? startingLatitude : null,
+      lastGpsLongitude: hasValidStartingGps ? startingLongitude : null,
+      lastPowerKilowatts: latestPowerKw,
+      lastSpeed: 0,
+      lapTimes: [],
+    });
+  };
 
-        return {
-          startTimestamp: latestTimestamp,
-          isRunning: true,
-          average: startingAverage,
-          sampleCount: startingAverage === null ? 0 : 1,
-          lastProcessedTimestamp: latestTimestamp,
-          distanceMeters: 0,
-          energyKilowattHours: 0,
-          lastGpsLatitude: hasValidStartingGps ? startingLatitude : null,
-          lastGpsLongitude: hasValidStartingGps ? startingLongitude : null,
-          lastPowerKilowatts: latestPowerKw,
-          lastSpeed: 0,
-          lapTimes: [],
-        };
-      });
-    };
+  const stopRunTracking = () => {
+    setRunSession((previous) => {
+      return {
+        ...previous,
+        isRunning: false,
+      };
+    });
+  };
 
-    if (mode === "replay") {
-      updateRunSession();
+  const toggleReplayRunTracking = () => {
+    if (runSession.isRunning) {
+      stopRunTracking();
       return;
     }
 
-    try {
-      const response = await fetch(
-        `http://localhost:8000/bag/${runSession.isRunning ? "stop" : "start"}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-
-      updateRunSession();
-
-      if (!response.ok) {
-        throw new Error("Network response was not ok for ROS bag endpoint");
-      }
-
-      const result = await response.json();
-      console.log("Success:", result);
-    } catch (error) {
-      console.error("Error occurred while fetching data:", error);
+    if (canStartRunTracking()) {
+      startRunTracking();
     }
   };
 
@@ -535,7 +506,7 @@ export default function InteractiveGrid({
               {warn.message}
             </p>
 
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
               {runSession.isRunning ? (
                 <button
                   className="rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] transition focus:outline-0"
@@ -545,13 +516,23 @@ export default function InteractiveGrid({
                 </button>
               ) : null}
 
-              <button
-                type="button"
-                className="rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] transition focus:outline-0"
-                onClick={toggleRunTracking}
-              >
-                {runSession.isRunning ? "Stop" : "Start"}
-              </button>
+              {mode === "replay" ? (
+                <ToggleControlButton
+                  isRunning={runSession.isRunning}
+                  startLabel="Start"
+                  stopLabel="Stop"
+                  onClick={toggleReplayRunTracking}
+                />
+              ) : (
+                <>
+                  <RosbagControlButton
+                    onStart={startRunTracking}
+                    onStop={stopRunTracking}
+                    onError={showWarning}
+                  />
+                  <AutonomyControlButton onError={showWarning} />
+                </>
+              )}
             </div>
           </div>
         </div>

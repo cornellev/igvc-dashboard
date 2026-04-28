@@ -32,6 +32,7 @@ It is exposed on port `8000` on the laptop.
 - `GET /` basic health response
 - `WS /ws/stream` live telemetry stream for the frontend
 - `POST /bag/start`, `POST /bag/stop`, and `GET /bag/status` proxy rosbag controls
+- `POST /autonomy/start`, `POST /autonomy/stop`, and `GET /autonomy/status` publish autonomy run state
 - `GET /healthz` reports backend and remote bag-service health
 
 ## Environment
@@ -43,3 +44,5 @@ It is exposed on port `8000` on the laptop.
 - `ROSBAG_API_URL` optionally sets the full rosbag API base URL
 - `ROSBAG_API_HOST` optionally overrides `JETSON_LAN_IP` for remote rosbag API requests
 - `ROSBAG_API_PORT` is the rosbag API port
+- `AUTONOMY_RUN_TOPIC` sets the `std_msgs/msg/Int32` topic for autonomy run commands, defaulting to `autonomy_run`
+- `AUTONOMY_RUN_PUBLISH_HZ` sets how often the backend republishes `1` while started and `0` while stopped, defaulting to `10`

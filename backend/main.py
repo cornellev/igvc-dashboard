@@ -12,6 +12,7 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from subscriber import DataSubscriber
 from camera_subscriber import CameraSubscriber
+from autonomy_control import AutonomyControlPublisher
 from contextlib import asynccontextmanager
 import math
 import httpx
@@ -82,7 +83,7 @@ def ros_spin_loop(node: DataSubscriber, stop_evt: threading.Event, history: coll
         ex.remove_node(node)
         print("[ROS] spin loop exited", flush=True)
 
-def camera_spin_loop(nodes: list, stop_evt: threading.Event):
+def auxiliary_spin_loop(nodes: list, stop_evt: threading.Event):
     ex = SingleThreadedExecutor()
     for node in nodes:
         ex.add_node(node)
@@ -91,11 +92,11 @@ def camera_spin_loop(nodes: list, stop_evt: threading.Event):
             try:
                 ex.spin_once(timeout_sec=0.05)
             except Exception as e:
-                print(f"[CAM] ERROR: {e}", flush=True)
+                print(f"[ROS] ERROR: exception during auxiliary spin: {e}", flush=True)
     finally:
         for node in nodes:
             ex.remove_node(node)
-        print("[CAM] spin loop exited", flush=True)
+        print("[ROS] auxiliary spin loop exited", flush=True)
 
 # broadcasts new messages to all clients without re-collecting ROS message per client
 # use a single producer to wait for next snapshot and then broadcast to all active sockets
@@ -158,6 +159,17 @@ async def lifespan(app: FastAPI):
         print(f"[CAM] ERROR: failed to create camera subscribers: {e}", flush=True)
         raise
 
+    try:
+        autonomy_topic = os.getenv("AUTONOMY_RUN_TOPIC", "autonomy_run")
+        autonomy_publish_hz = float(os.getenv("AUTONOMY_RUN_PUBLISH_HZ", "10"))
+        app.state.autonomy_control = AutonomyControlPublisher(
+            autonomy_topic,
+            autonomy_publish_hz,
+        )
+    except Exception as e:
+        print(f"[ROS] ERROR: failed to create autonomy control publisher: {e}", flush=True)
+        raise
+
     # create stop signal before starting ROS thread
     app.state.stop_evt = threading.Event()
 
@@ -176,8 +188,15 @@ async def lifespan(app: FastAPI):
     app.state.ros_thread.start()
 
     app.state.camera_thread = threading.Thread(
-        target=camera_spin_loop,
-        args=([app.state.camera_left, app.state.camera_right], app.state.stop_evt),
+        target=auxiliary_spin_loop,
+        args=(
+            [
+                app.state.camera_left,
+                app.state.camera_right,
+                app.state.autonomy_control,
+            ],
+            app.state.stop_evt,
+        ),
         daemon=True
     )
     app.state.camera_thread.start()
@@ -197,6 +216,7 @@ async def lifespan(app: FastAPI):
         app.state.node.destroy_node()
         app.state.camera_left.destroy_node()
         app.state.camera_right.destroy_node()
+        app.state.autonomy_control.destroy_node()
         rclpy.shutdown()
 
 app = FastAPI(lifespan=lifespan)
@@ -257,6 +277,20 @@ async def bag_stop():
 @app.get("/bag/status")
 async def bag_status():
     return await forward_bag_request("GET", "/bag/status")
+
+@app.post("/autonomy/start")
+async def autonomy_start():
+    app.state.autonomy_control.start_run()
+    return app.state.autonomy_control.get_status()
+
+@app.post("/autonomy/stop")
+async def autonomy_stop():
+    app.state.autonomy_control.stop_run()
+    return app.state.autonomy_control.get_status()
+
+@app.get("/autonomy/status")
+async def autonomy_status():
+    return app.state.autonomy_control.get_status()
 
 @app.get("/healthz")
 async def healthz():
