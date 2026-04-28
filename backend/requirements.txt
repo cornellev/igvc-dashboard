@@ -3,7 +3,6 @@ uvicorn[standard]
 websockets
 asyncio
 pyserial
-httpx
 rosbags
 opencv-python-headless
 numpy

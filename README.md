@@ -152,6 +152,6 @@ Uploaded ROS bag `.db3` → Backend Bag Parser → Replay Timeline → Shared Da
 ## ROSbag + Remote Data Handling
 
 - The frontend can trigger ROSbag recording via `/bag` endpoints
-- The backend communicates with the DAQ machine over the router LAN
-- ROSbag files are stored remotely for later analysis and replay
+- The backend publishes rosbag recording state on `dashboard_control/bag_recording`
+- ROSbag recording consumers should subscribe to that control topic and start on `1`, stop on `0`
 - Local dashboard replay supports uploaded CSV telemetry exports and rosbag2 SQLite `.db3` files

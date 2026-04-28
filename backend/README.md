@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI service that subscribes to the ROS 2 `spi_data` topic and streams snapshots to the frontend over WebSocket. It also proxies rosbag control requests.
+FastAPI service that subscribes to the ROS 2 `spi_data` topic and streams snapshots to the frontend over WebSocket. It also publishes dashboard control signals for rosbag recording and autonomy runs.
 
 ## Running the backend
 
@@ -31,9 +31,10 @@ It is exposed on port `8000` on the laptop.
 
 - `GET /` basic health response
 - `WS /ws/stream` live telemetry stream for the frontend
-- `POST /bag/start`, `POST /bag/stop`, and `GET /bag/status` proxy rosbag controls
+- `POST /bag/start`, `POST /bag/stop`, and `GET /bag/status` publish rosbag recording state
 - `POST /autonomy/start`, `POST /autonomy/stop`, and `GET /autonomy/status` publish autonomy run state
-- `GET /healthz` reports backend and remote bag-service health
+- `GET /control/status` returns both dashboard control states
+- `GET /healthz` reports backend health and current control states
 
 ## Environment
 
@@ -41,8 +42,7 @@ It is exposed on port `8000` on the laptop.
 - `ROS_LOCALHOST_ONLY` controls whether ROS discovery is localhost-only
 - `JETSON_LAN_IP` is the Jetson's LAN address on the router network
 - `DISCOVERY_SERVER_IP` optionally overrides `JETSON_LAN_IP` for Fast DDS discovery
-- `ROSBAG_API_URL` optionally sets the full rosbag API base URL
-- `ROSBAG_API_HOST` optionally overrides `JETSON_LAN_IP` for remote rosbag API requests
-- `ROSBAG_API_PORT` is the rosbag API port
-- `AUTONOMY_RUN_TOPIC` sets the `std_msgs/msg/Int32` topic for autonomy run commands, defaulting to `autonomy_run`
-- `AUTONOMY_RUN_PUBLISH_HZ` sets how often the backend republishes `1` while started and `0` while stopped, defaulting to `10`
+- `DASHBOARD_CONTROL_TOPIC` sets the shared ROS topic namespace for `std_msgs/msg/Int32` control commands, defaulting to `dashboard_control`
+- `DASHBOARD_CONTROL_PUBLISH_HZ` sets how often the backend republishes `1` while started and `0` while stopped for each control, defaulting to `10`
+
+By default, autonomy state is published on `dashboard_control/autonomy_run` and rosbag recording state is published on `dashboard_control/bag_recording`.

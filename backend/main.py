@@ -6,16 +6,15 @@ import time
 import os
 import tempfile
 from pathlib import Path
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body, HTTPException, Response, Header
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from subscriber import DataSubscriber
 from camera_subscriber import CameraSubscriber
-from autonomy_control import AutonomyControlPublisher
+from autonomy_control import DashboardControlPublisher
 from contextlib import asynccontextmanager
 import math
-import httpx
 
 from rosbag_replay import parse_rosbag_to_csv_rows
 
@@ -160,14 +159,17 @@ async def lifespan(app: FastAPI):
         raise
 
     try:
-        autonomy_topic = os.getenv("AUTONOMY_RUN_TOPIC", "autonomy_run")
-        autonomy_publish_hz = float(os.getenv("AUTONOMY_RUN_PUBLISH_HZ", "10"))
-        app.state.autonomy_control = AutonomyControlPublisher(
-            autonomy_topic,
-            autonomy_publish_hz,
+        control_topic_namespace = os.getenv(
+            "DASHBOARD_CONTROL_TOPIC",
+            "dashboard_control",
+        )
+        control_publish_hz = float(os.getenv("DASHBOARD_CONTROL_PUBLISH_HZ", "10"))
+        app.state.dashboard_control = DashboardControlPublisher(
+            control_topic_namespace,
+            control_publish_hz,
         )
     except Exception as e:
-        print(f"[ROS] ERROR: failed to create autonomy control publisher: {e}", flush=True)
+        print(f"[ROS] ERROR: failed to create dashboard control publisher: {e}", flush=True)
         raise
 
     # create stop signal before starting ROS thread
@@ -193,7 +195,7 @@ async def lifespan(app: FastAPI):
             [
                 app.state.camera_left,
                 app.state.camera_right,
-                app.state.autonomy_control,
+                app.state.dashboard_control,
             ],
             app.state.stop_evt,
         ),
@@ -216,7 +218,7 @@ async def lifespan(app: FastAPI):
         app.state.node.destroy_node()
         app.state.camera_left.destroy_node()
         app.state.camera_right.destroy_node()
-        app.state.autonomy_control.destroy_node()
+        app.state.dashboard_control.destroy_node()
         rclpy.shutdown()
 
 app = FastAPI(lifespan=lifespan)
@@ -235,72 +237,44 @@ def root():
     """Health check endpoint."""
     return {"message": "Race Telemetry API", "status": "running"}
 
-def get_remote_bag_base_url() -> str:
-    configured_url = os.getenv("ROSBAG_API_URL")
-    if configured_url:
-        return configured_url.rstrip("/")
-
-    host = (
-        os.getenv("ROSBAG_API_HOST")
-        or os.getenv("JETSON_LAN_IP")
-        or os.getenv("DISCOVERY_SERVER_IP")
-    )
-    if not host:
-        raise HTTPException(
-            status_code=503,
-            detail="Set ROSBAG_API_HOST or JETSON_LAN_IP to reach the rosbag API.",
-        )
-
-    port = os.getenv("ROSBAG_API_PORT", "8080")
-    return f"http://{host}:{port}"
-
-async def forward_bag_request(method: str, path: str) -> Response:
-    url = f"{get_remote_bag_base_url()}{path}"
-    timeout = httpx.Timeout(5.0, connect=2.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        remote_response = await client.request(method, url)
-    content_type = remote_response.headers.get("content-type", "application/json")
-    return Response(
-        content=remote_response.content,
-        status_code=remote_response.status_code,
-        media_type=content_type,
-    )
-
 @app.post("/bag/start")
 async def bag_start():
-    return await forward_bag_request("POST", "/bag/start")
+    app.state.dashboard_control.start_bag_recording()
+    return app.state.dashboard_control.get_bag_status()
 
 @app.post("/bag/stop")
 async def bag_stop():
-    return await forward_bag_request("POST", "/bag/stop")
+    app.state.dashboard_control.stop_bag_recording()
+    return app.state.dashboard_control.get_bag_status()
 
 @app.get("/bag/status")
 async def bag_status():
-    return await forward_bag_request("GET", "/bag/status")
+    return app.state.dashboard_control.get_bag_status()
 
 @app.post("/autonomy/start")
 async def autonomy_start():
-    app.state.autonomy_control.start_run()
-    return app.state.autonomy_control.get_status()
+    app.state.dashboard_control.start_autonomy_run()
+    return app.state.dashboard_control.get_autonomy_status()
 
 @app.post("/autonomy/stop")
 async def autonomy_stop():
-    app.state.autonomy_control.stop_run()
-    return app.state.autonomy_control.get_status()
+    app.state.dashboard_control.stop_autonomy_run()
+    return app.state.dashboard_control.get_autonomy_status()
 
 @app.get("/autonomy/status")
 async def autonomy_status():
-    return app.state.autonomy_control.get_status()
+    return app.state.dashboard_control.get_autonomy_status()
+
+@app.get("/control/status")
+async def control_status():
+    return app.state.dashboard_control.get_status()
 
 @app.get("/healthz")
 async def healthz():
-    # forward request if good, otherwise report "unreachable"
-    try:
-        bag_response = await forward_bag_request("GET", "/healthz")
-        bag_status = "ok" if bag_response.status_code == 200 else "error"
-    except Exception:
-        bag_status = "unreachable"
-    return {"local": "ok", "bag_service": bag_status}
+    return {
+        "local": "ok",
+        "controls": app.state.dashboard_control.get_status(),
+    }
 
 @app.post("/replay/rosbag")
 async def replay_rosbag(
