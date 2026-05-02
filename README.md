@@ -44,6 +44,8 @@ Live telemetry and analysis for the car: sensor streams (with filtering), derive
    Make sure Docker containers and volumes for this project are not running already.
    Then, run `docker compose up --build` to get all containers running.
 
+   For testing with a mock camera, use `docker compose -f docker-compose.yml -f docker-compose.mock.yml up`
+
    The frontend client UI should be running on `port 3000`.  
    The backend healthcheck endpoint is on the root of `port 8000`.
 
