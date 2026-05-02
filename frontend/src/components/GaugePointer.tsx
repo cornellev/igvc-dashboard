@@ -1,6 +1,9 @@
 import { useGaugeState } from "@mui/x-charts/Gauge";
 
 export default function GaugePointer() {
+  
+  return null;
+  /** 
   const { valueAngle, outerRadius, cx, cy } = useGaugeState();
 
   if (valueAngle === null) {
@@ -22,4 +25,6 @@ export default function GaugePointer() {
       />
     </g>
   );
+
+  */
 }

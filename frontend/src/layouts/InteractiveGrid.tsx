@@ -360,7 +360,7 @@ export default function InteractiveGrid({
               }
               sx={{ flexWrap: "wrap" }}
             >
-              <GaugeReferenceArc />
+             
               <GaugePointer />
             </GaugeContainer>
 
