@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     restart: on-failure:3
     environment:
+      - RUN_MOCK_CAMERA=${RUN_MOCK_CAMERA:-}
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-14}
       - ROS_LOCALHOST_ONLY=0
       - JETSON_LAN_IP=${JETSON_LAN_IP:-}

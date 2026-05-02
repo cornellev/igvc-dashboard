@@ -1,7 +1,0 @@
-services:
-  backend:
-    environment:
-      - RUN_MOCK_CAMERA=true
-      # prevent host JETSON_LAN_IP from enabling SUPER_CLIENT mode
-      - DISCOVERY_SERVER_IP=
-      - JETSON_LAN_IP=
