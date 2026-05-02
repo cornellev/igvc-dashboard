@@ -2,6 +2,7 @@ frontend/node_modules/
 frontend/.env
 frontend/data/
 frontend/data/*
+backend/env/
 .env
 .env*.local
 .direnv
