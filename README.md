@@ -44,7 +44,10 @@ Live telemetry and analysis for the car: sensor streams (with filtering), derive
    Make sure Docker containers and volumes for this project are not running already.
    Then, run `docker compose up --build` to get all containers running.
 
-   For testing with a mock camera, use `RUN_MOCK_CAMERA=true docker compose up`
+   Compose variants:
+   - `docker compose -f docker-compose.dev.yml up --build` for local development and mock camera testing
+   - `RUN_MOCK_CAMERA=true docker compose -f docker-compose.dev.yml up --build` to enable the mock camera
+   - `docker compose -f docker-compose.prod.yml up --build` for the real ROS LAN setup
 
    The frontend client UI should be running on `port 3000`.  
    The backend healthcheck endpoint is on the root of `port 8000`.

@@ -14,6 +14,7 @@ class CameraSubscriber(Node):
 
         self._latest_jpeg: bytes | None = None
         self._lock = threading.Lock()
+        self._frame_count = 0
 
         qos = QoSProfile(depth=1)
         self.subscription = self.create_subscription(Image, topic, self._callback, qos)
@@ -32,6 +33,16 @@ class CameraSubscriber(Node):
 
         with self._lock:
             self._latest_jpeg = jpeg
+            self._frame_count += 1
+
+        if self._frame_count == 1:
+            self.get_logger().info(
+                f'received first camera frame: {msg.width}x{msg.height}, encoding={msg.encoding}, bytes={len(msg.data)}'
+            )
+        elif self._frame_count % 60 == 0:
+            self.get_logger().info(
+                f'received {self._frame_count} camera frames'
+            )
 
     def get_latest_jpeg(self) -> bytes | None:
         with self._lock:

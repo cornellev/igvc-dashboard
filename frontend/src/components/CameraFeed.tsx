@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getWebSocketUrl } from "../utils/ws";
 
 export default function CameraFeed({ side }: { side: "left" | "right" }) {
   const imgRef = useRef<HTMLImageElement>(null);
@@ -10,7 +11,7 @@ export default function CameraFeed({ side }: { side: "left" | "right" }) {
 
     const connect = () => {
       if (cancelled) return;
-      const ws = new WebSocket(`ws://127.0.0.1:8000/ws/camera/${side}`);
+      const ws = new WebSocket(getWebSocketUrl(`/ws/camera/${side}`));
       ws.binaryType = "blob";
 
       ws.onclose = () => {

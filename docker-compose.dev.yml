@@ -1,0 +1,40 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: on-failure:3
+    environment:
+      - RUN_MOCK_CAMERA=${RUN_MOCK_CAMERA:-}
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-14}
+      - ROS_LOCALHOST_ONLY=0
+      - JETSON_LAN_IP=${JETSON_LAN_IP:-}
+      - DISCOVERY_SERVER_IP=${DISCOVERY_SERVER_IP:-}
+      - ROSBAG_API_URL=${ROSBAG_API_URL:-}
+      - ROSBAG_API_HOST=${ROSBAG_API_HOST:-}
+      - ROSBAG_API_PORT=${ROSBAG_API_PORT:-8080}
+    ports:
+      - "8000:8000"
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        - VITE_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY:-}
+        - VITE_GOOGLE_MAP_ID=${VITE_GOOGLE_MAP_ID:-}
+      dockerfile: Dockerfile
+    environment:
+      - VITE_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY:-}
+      - VITE_GOOGLE_MAP_ID=${VITE_GOOGLE_MAP_ID:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

@@ -333,16 +333,22 @@ async def websocket_camera(websocket: WebSocket, side: str):
         return
 
     await websocket.accept()
+    print(f"[CAM] websocket connected for {side}", flush=True)
     node = app.state.camera_left if side == "left" else app.state.camera_right
+    warned_no_frame = False
 
     try:
         while True:
             jpeg = node.get_latest_jpeg()
             if jpeg is not None:
+                warned_no_frame = False
                 await websocket.send_bytes(jpeg)
+            elif not warned_no_frame:
+                print(f"[CAM] waiting for first {side} frame", flush=True)
+                warned_no_frame = True
             await asyncio.sleep(1 / 30)
     except WebSocketDisconnect:
-        pass
+        print(f"[CAM] websocket disconnected for {side}", flush=True)
 
 if __name__ == "__main__":
     import uvicorn
