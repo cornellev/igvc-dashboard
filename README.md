@@ -92,6 +92,24 @@ JETSON_LAN_IP=192.168.1.2
 Use `DISCOVERY_SERVER_IP` only if the Fast DDS discovery server is on a different
 LAN address than `JETSON_LAN_IP`.
 
+### Local Costmap Bag Replay
+
+To test the occupancy grid widget with the local `../costmap` rosbag, start the
+dashboard first:
+
+```sh
+docker compose up --build
+```
+
+Then, in a ROS 2 sourced shell, replay the costmap topics:
+
+```sh
+./scripts/replay_costmap_bag.sh
+```
+
+The script publishes `/costmap` and `/costmap_updates` from start to end. If the
+bag lives somewhere else, pass the bag directory as the first argument.
+
 ## Replay Mode
 
 The frontend includes a dedicated **Replay** page alongside the live **Data** view.

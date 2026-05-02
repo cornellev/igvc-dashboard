@@ -13,6 +13,7 @@ from rclpy.executors import SingleThreadedExecutor
 from subscriber import DataSubscriber
 from camera_subscriber import CameraSubscriber
 from autonomy_control import DashboardControlPublisher
+from costmap_subscriber import CostmapSubscriber
 from contextlib import asynccontextmanager
 import math
 
@@ -170,6 +171,11 @@ async def lifespan(app: FastAPI):
         )
     except Exception as e:
         print(f"[ROS] ERROR: failed to create dashboard control publisher: {e}", flush=True)
+    
+    try:
+        app.state.costmap = CostmapSubscriber()
+    except Exception as e:
+        print(f"[COSTMAP] ERROR: failed to create costmap subscriber: {e}", flush=True)
         raise
 
     # create stop signal before starting ROS thread
@@ -196,6 +202,7 @@ async def lifespan(app: FastAPI):
                 app.state.camera_left,
                 app.state.camera_right,
                 app.state.dashboard_control,
+                app.state.costmap,
             ],
             app.state.stop_evt,
         ),
@@ -219,6 +226,7 @@ async def lifespan(app: FastAPI):
         app.state.camera_left.destroy_node()
         app.state.camera_right.destroy_node()
         app.state.dashboard_control.destroy_node()
+        app.state.costmap.destroy_node()
         rclpy.shutdown()
 
 app = FastAPI(lifespan=lifespan)
@@ -341,6 +349,28 @@ async def websocket_camera(websocket: WebSocket, side: str):
             if jpeg is not None:
                 await websocket.send_bytes(jpeg)
             await asyncio.sleep(1 / 30)
+    except WebSocketDisconnect:
+        pass
+
+@app.websocket("/ws/costmap")
+async def websocket_costmap(websocket: WebSocket):
+    await websocket.accept()
+    seq = 0
+    last_stamp = None
+
+    try:
+        while True:
+            grid, stamp = app.state.costmap.get_latest()
+            if grid is not None and stamp is not None and stamp != last_stamp:
+                last_stamp = stamp
+                payload = sanitize_json({
+                    "seq": seq,
+                    "stamp_ns": stamp,
+                    "data": grid,
+                })
+                await websocket.send_json(payload)
+                seq += 1
+            await asyncio.sleep(1 / 20)
     except WebSocketDisconnect:
         pass
 

@@ -13,6 +13,7 @@ import {
   RosbagControlButton,
   ToggleControlButton,
 } from "../components/RunControlButtons";
+import CostmapView from "../components/CostmapView";
 import type { SocketData } from "../utils/Socket";
 import { LinearProgress } from "@mui/material";
 import {
@@ -664,6 +665,13 @@ export default function InteractiveGrid({
         title="Camera (Right)"
       >
         <CameraFeed side="right" />
+      </DashboardCard>
+
+      <DashboardCard
+        className="min-h-110 lg:col-span-12 lg:min-h-120"
+        title="Occupancy Grid"
+      >
+        <CostmapView />
       </DashboardCard>
     </div>
   );
