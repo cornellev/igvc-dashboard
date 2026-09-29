@@ -1,21 +1,20 @@
+"""Standalone ROS IMU/GNSS prototype, retained without enabling it at startup."""
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from rclpy.qos import QoSProfile
 import json
-import threading
+from state import DashboardState
 
 
 class MultiTopicSubscriber(Node):
-    def __init__(self):
+    def __init__(self, state: DashboardState | None = None):
         super().__init__("multi_topic_subscriber")
 
         self.get_logger().info("Starting multi-topic subscriber")
 
-        # Thread-safe storage for all topics
-        self._lock = threading.Lock()
-        self.latest = {}  # {topic_name: data}
-        self.timestamps = {}  # {topic_name: nanoseconds}
+        self._state = state if state is not None else DashboardState()
 
         qos = QoSProfile(depth=1)
 
@@ -56,17 +55,16 @@ class MultiTopicSubscriber(Node):
                 self.get_logger().error(f"[{topic_name}] Unexpected error: {e}")
                 return
 
-            with self._lock:
-                self.latest[topic_name] = data
-                self.timestamps[topic_name] = self.get_clock().now().nanoseconds
+            self._state.update_latest(
+                topic_name, data, self.get_clock().now().nanoseconds
+            )
 
             self.get_logger().info(f"[{topic_name}] received: {data}")
 
         return callback
 
     def get_latest_all(self):
-        with self._lock:
-            return dict(self.latest), dict(self.timestamps)
+        return self._state.get_latest_all()
 
 
 def main(args=None):

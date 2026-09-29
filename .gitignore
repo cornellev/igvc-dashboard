@@ -9,6 +9,9 @@ backend/env/
 .envrc
 .DS_Store
 backend/__pycache__
+**/__pycache__/
+*.pyc
+*.egg-info/
 .codex
 .venv
 venv

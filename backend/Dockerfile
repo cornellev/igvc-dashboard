@@ -8,14 +8,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file (build context is backend/, so path is subscriber/requirements.txt)
-COPY requirements.txt .
+# The repo-root build context also includes tools/mock_vehicle.py.
+COPY backend/requirements.txt .
 
 # Install Python dependencies
 RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY backend/ .
+COPY tools/mock_vehicle.py ./tools/mock_vehicle.py
 
 EXPOSE 8000
 

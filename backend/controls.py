@@ -1,3 +1,5 @@
+"""Existing ROS controls retained as filler for the future command interface."""
+
 import threading
 
 from rclpy.node import Node
@@ -17,7 +19,9 @@ class DashboardControlPublisher(Node):
         self._topics = {
             key: f"{self._topic_namespace}/{key}" for key in self._states
         }
-        self._publishers = {
+        # Node owns _publishers internally; keep our lookup separate so that
+        # its normal destroy_node() cleanup continues to work.
+        self._control_publishers = {
             key: self.create_publisher(Int32, topic, 10)
             for key, topic in self._topics.items()
         }
@@ -81,4 +85,4 @@ class DashboardControlPublisher(Node):
     def _publish_value(self, key: str, value: int):
         message = Int32()
         message.data = value
-        self._publishers[key].publish(message)
+        self._control_publishers[key].publish(message)

@@ -1,20 +1,21 @@
+"""Existing spi_data ROS subscriber; FSM and health inputs are not defined yet."""
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 import json
 from rclpy.qos import QoSProfile
-import threading
+from state import DashboardState
 
 class DataSubscriber(Node):
-    def __init__(self, topic):
+    def __init__(self, topic, state: DashboardState | None = None):
         super().__init__('data_subscriber')
         
         self.get_logger().info(f'Subscribing to ROS topic: {topic}')
 
+        self._topic = topic
+        self._state = state if state is not None else DashboardState()
         self._latest_raw = None          # latest raw JSON string
-        self._latest_data = None         # latest decoded dict
-        self._latest_stamp_ns = None
-        self._lock = threading.Lock() # lock for thread-safe access to latest data
         self.running = True
 
         qos = QoSProfile(depth=1)  # keep only the newest message
@@ -33,25 +34,22 @@ class DataSubscriber(Node):
             print(msg)
             data = json.loads(msg.data)
         except json.JSONDecodeError as e:
-            self._latest_data = None
+            self._state.invalidate_latest(self._topic)
             self.get_logger().error(f"Failed to decode message: {msg.data}, error: {e}")
             return
         except Exception as e:
-            self._latest_data = None
+            self._state.invalidate_latest(self._topic)
             self.get_logger().error(f"Unexpected error in callback: {e}")
             return
 
-        with self._lock:
-            self._latest_data = data
-            self._latest_raw = msg.data
-            self._latest_stamp_ns = self.get_clock().now().nanoseconds
+        self._latest_raw = msg.data
+        self._state.update_latest(self._topic, data, self.get_clock().now().nanoseconds)
 
-        self.get_logger().info(f"Received data: {self._latest_data}")
+        self.get_logger().info(f"Received data: {data}")
 
     # Returns (data_dict_or_None, recv_time_ns_or_None)
     def get_latest(self):
-        with self._lock: 
-            return self._latest_data, self._latest_stamp_ns
+        return self._state.get_latest(self._topic)
     
     def destroy_node(self):
         super().destroy_node()

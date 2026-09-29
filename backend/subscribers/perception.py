@@ -1,3 +1,5 @@
+"""Existing ROS camera subscriber; segmentation inputs are not implemented yet."""
+
 import threading
 import numpy as np
 import cv2
