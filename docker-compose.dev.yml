@@ -13,6 +13,13 @@ services:
       - ROSBAG_API_URL=${ROSBAG_API_URL:-}
       - ROSBAG_API_HOST=${ROSBAG_API_HOST:-}
       - ROSBAG_API_PORT=${ROSBAG_API_PORT:-8080}
+      - ZENOH_CONFIG=/etc/zenoh/zenoh.json5
+    volumes:
+      - ./zenoh-dev.json5:/etc/zenoh/zenoh.json5:ro
+    # Lets the container reach the host's zenoh publisher on Linux too
+    # (Docker Desktop on macOS/Windows provides this name already).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     networks:

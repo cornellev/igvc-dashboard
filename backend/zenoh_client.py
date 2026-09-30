@@ -1,8 +1,9 @@
-"""Future home of the shared Zenoh client; currently contains ROS filler.
+"""Shared Zenoh client, plus the ROS filler that still runs alongside it.
 
-LegacyRosClient is the lifecycle code extracted from main.py. It deliberately
-uses the existing ROS subscribers, executors, topics, and control publisher.
-There is no Zenoh session or ROS-to-Zenoh conversion in this change.
+ZenohClient owns the one Zenoh session and the subscribers declared on it
+(currently just the lidar point cloud). LegacyRosClient is the lifecycle code
+extracted from main.py. It deliberately uses the existing ROS subscribers,
+executors, topics, and control publisher, and starts/stops a ZenohClient too.
 """
 
 import os
@@ -10,14 +11,51 @@ import threading
 import time
 
 import rclpy
+import zenoh
 from rclpy.executors import SingleThreadedExecutor
 
 from controls import DashboardControlPublisher
 from state import DashboardState
-from subscribers.perception import CameraSubscriber
+from subscribers.perception import CameraSubscriber, LidarSubscriber
 from subscribers.status import DataSubscriber
 
 SAMPLE_RATE_HZ = 40
+LIDAR_KEY = os.getenv("LIDAR_ZENOH_KEY", "rslidar/points/segmented")
+
+class ZenohClient:
+    """Own the shared Zenoh session and the subscribers declared on it."""
+
+    def __init__(self, config: zenoh.Config | None = None):
+        self._config = config
+        self.session = None
+        self._subscribers = []
+
+    def start(self):
+        try:
+            # ZENOH_CONFIG may point at a json5 file, e.g. to connect to a
+            # router when multicast discovery can't reach the publisher.
+            config = self._config
+            if config is None:
+                config = zenoh.Config.from_env() if os.getenv("ZENOH_CONFIG") else zenoh.Config()
+            self.session = zenoh.open(config)
+            print("[ZENOH] session opened", flush=True)
+
+            # All subscribers go here
+            self.lidar = LidarSubscriber(self.session, LIDAR_KEY)
+            self._subscribers.append(self.lidar)
+            print(f"[ZENOH] subscribed to {LIDAR_KEY}", flush=True)
+        except Exception:
+            self.stop()
+            raise
+
+    def stop(self):
+        for subscriber in self._subscribers:
+            subscriber.close()
+        self._subscribers.clear()
+
+        if self.session is not None:
+            self.session.close()
+            self.session = None
 
 
 def ros_spin_loop(node: DataSubscriber, stop_evt: threading.Event, state: DashboardState):
@@ -93,9 +131,13 @@ class LegacyRosClient:
         self._initialized = False
         self._nodes = []
         self._threads = []
+        self.zenoh = ZenohClient()
 
     def start(self):
         try:
+            self.zenoh.start()
+            self.lidar = self.zenoh.lidar
+
             rclpy.init()
             self._initialized = True
             print("[ROS] rclpy initialized", flush=True)
@@ -147,3 +189,5 @@ class LegacyRosClient:
         if self._initialized:
             rclpy.shutdown()
             self._initialized = False
+
+        self.zenoh.stop()

@@ -4,3 +4,4 @@ websockets
 pyserial
 opencv-python-headless
 numpy
+eclipse-zenoh>=1.0

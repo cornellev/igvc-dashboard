@@ -1,13 +1,13 @@
-"""Existing ROS camera subscriber; segmentation inputs are not implemented yet."""
+"""ROS camera subscriber and Zenoh lidar point-cloud subscriber."""
 
-import threading
+import threading, struct
 import numpy as np
+import zenoh
 import cv2
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
 from sensor_msgs.msg import Image
-
 
 class CameraSubscriber(Node):
     def __init__(self, topic: str, node_name: str):
@@ -52,3 +52,32 @@ class CameraSubscriber(Node):
 
     def destroy_node(self):
         super().destroy_node()
+
+
+class LidarSubscriber:
+    def __init__(self, session: zenoh.Session, key: str = "rslidar/points/segmented"):
+        self._lock = threading.Lock()
+        self._latest = None          # (stamp, points ndarray)
+        self._frame_count = 0
+        self._sub = session.declare_subscriber(key, self._callback)
+
+    def _callback(self, sample):
+        b = sample.payload.to_bytes()
+        if len(b) < 16:
+            return
+        sec, nsec, width, step = struct.unpack_from("<iIII", b, 0)
+        if step not in (16, 20) or len(b) - 16 < width * step:
+            return
+        pts = np.frombuffer(b, "<f4", count=width * step // 4, offset=16).reshape(width, step // 4)
+        pts = pts[~np.isnan(pts[:, :3]).any(axis=1)]
+        with self._lock:
+            self._latest = (sec + nsec * 1e-9, pts)
+            self._frame_count += 1
+
+    def get_latest(self):
+        with self._lock:
+            return self._latest
+
+    def close(self):
+        self._sub.undeclare()
+

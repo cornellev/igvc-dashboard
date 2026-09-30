@@ -1,0 +1,15 @@
+// Zenoh config for the backend in docker-compose.dev.yml.
+//
+// Multicast discovery can't reach into Docker's bridge network, so the backend
+// dials the lidar publisher (virtual-rgbd-sensor's rslidar_viz, running on the
+// host) directly on its fixed port. Keep the port in sync with
+// ZENOH_LISTEN_ENDPOINT in rslidar_sdk_node.rs.
+{
+  mode: "peer",
+  connect: {
+    endpoints: ["tcp/host.docker.internal:7447"],
+  },
+  scouting: {
+    multicast: { enabled: false },
+  },
+}
