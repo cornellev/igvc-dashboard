@@ -12,12 +12,12 @@ Ajay, Donte, Eric, Shreyaa
 
 ## Summary
 
-The backend now follows the approved condensed autonomy-dashboard layout. Its
-existing ROS implementation is retained as filler; Zenoh integration and new
+The backend and frontend now follow the approved condensed repository layout.
+The existing implementations are retained as filler; Zenoh integration and new
 autonomy input contracts have not been implemented. See **Backend layout and
 current behavior** below for the mapping and intentionally deferred pieces.
 
-Live telemetry and analysis for the car: sensor streams (with filtering), derived run metrics, a telemetry sidebar, and a browser-based replay mode for uploaded telemetry exports.
+Live telemetry and analysis for the car: sensor streams (with filtering) and derived run metrics. The existing live view is retained; the empty sidebar and replay navigation are no longer mounted.
 
 **Sensor views**
 
@@ -25,13 +25,11 @@ Live telemetry and analysis for the car: sensor streams (with filtering), derive
 - **Power** time series (calculated from current and voltage data)
 - **GPS** location display with Google Maps
 - Live **Steering** angle, **Brake** pressure, **Throttle**, and **RPM** on all wheels
-- Timestamps and stopwatch for lap and race timing
+- Timestamps and stopwatch for recording duration
 
-**Replay tools**
+**Retained import helpers**
 
-- Upload a telemetry **CSV** export and replay it directly in the dashboard UI
-- Scrub through samples with a timeline slider or play/pause the run at multiple playback speeds
-- Reuse the same dashboard widgets in **Replay** mode to inspect historical data sample-by-sample
+- CSV parsing and telemetry-row adapters remain available in `frontend/src/data.ts` for fixtures and debugging; the replay page is not mounted.
 
 **Derived metrics**
 
@@ -59,7 +57,7 @@ Live telemetry and analysis for the car: sensor streams (with filtering), derive
 
 2. **Frontend Testing**
 
-   Refer to `frontend/README.md` for more information.  
+   Refer to the **Frontend development reference** below for more information.\
    **[Bun Installation](https://bun.com/docs/installation)**: The frontend uses **Bun** instead of **NodeJS** as a package manager
    and runtime. The installation is linked [here](https://bun.com/docs/installation). Then, run the following commands in the
    terminal to test/run the frontend in isolation.  
@@ -72,15 +70,15 @@ Live telemetry and analysis for the car: sensor streams (with filtering), derive
 
    **Google Maps**: To get location data and Google Maps properly displaying while
    running only the frontend with `bun dev`,
-   create a `.env` file in the `/frontend` directory. Follow the `.env.example` in the
-   `/frontend` and create the environment variables below.
+   set the variables below in the root `.env` (the existing Vite `envDir` points to
+   the repository root). The frontend `.env.example` also documents their names.
 
    ```env
    VITE_GOOGLE_MAPS_API_KEY=<Your Google Maps API Key here>
    VITE_GOOGLE_MAP_ID=<Your Google Maps Map ID from Google Cloud console>
    ```
 
-   Instructions for getting your own `API_KEY` and `MAP_ID` are in `frontend/README.md`.
+   Instructions for getting your own `API_KEY` and `MAP_ID` are in the **Frontend development reference** below.
 
 3. **Backend Troubleshooting**
 
@@ -102,21 +100,15 @@ JETSON_LAN_IP=192.168.1.2
 Use `DISCOVERY_SERVER_IP` only if the Fast DDS discovery server is on a different
 LAN address than `JETSON_LAN_IP`.
 
-## Replay Mode
+## Retained telemetry import adapters
 
-The frontend includes a dedicated **Replay** page alongside the live **Data** view.
-Use it to inspect telemetry exports without needing a live ROS2 stream.
-
-### Current capabilities
-
-- Upload a `.csv` telemetry file from the Replay page
-- Play, pause, reset, and scrub through the uploaded run
-- Change playback speed from `0.5x` up to `100x`
-- Render replayed samples through the same dashboard layout used for live telemetry
+The replay page, upload controls and playback scheduler are excluded from this
+migration. Its reusable parsing and row-mapping code remains in
+`frontend/src/data.ts`, without making upload requests or affecting live data.
 
 ### CSV expectations
 
-CSV replay is parsed entirely in the frontend and is intentionally flexible about
+The retained CSV parser runs entirely in the frontend and is flexible about
 column names. Headers are normalized by lowercasing and removing punctuation, so
 both flat and dotted names are accepted.
 
@@ -131,17 +123,16 @@ Examples of supported fields include:
 - `rpm_front.left`, `rpm_front.right`, `rpm_back.left`, `rpm_back.right`
 - `global_ts`, `timestamp`, `time`, or a row index fallback when timestamps are missing
 
-If a speed column name includes `mph`, the replay parser converts it to meters per
-second before rendering. If GPS coordinates are missing, the dashboard falls back
-to default coordinates and shows a warning after upload.
+The retained speed helper can convert mph aliases to meters per second; the
+existing row mapper's alias lists are unchanged. Missing GPS coordinates retain
+the original defaults and parser warnings.
 
 ### ROSBag upload on this branch
 
-The backend rosbag replay converter and `POST /replay/rosbag` route were removed
-because replay is outside the backend redesign. The existing frontend is
-unchanged and still offers `.db3` upload, but those uploads no longer work on
-this branch. Browser-only CSV replay is unaffected. The removed implementation
-remains recoverable in Git history.
+The backend converter and `POST /replay/rosbag` route remain removed as approved.
+The frontend upload request is also excluded. Pure row adapters are retained,
+but there is no active replay/upload page. The original replay demonstration
+below is historical, not a claim of current functionality.
 
 <video src="frontend/public/ReplayRED.mp4" loop muted autoplay></video>
 
@@ -152,7 +143,6 @@ remains recoverable in Git history.
 ```
 ROS2 Sensors → Backend (Python + ROS2) → WebSocket Stream → Frontend (React + TypeScript + Bun)
 
-Uploaded CSV → Frontend Replay Parser → Replay Timeline → Shared Dashboard Widgets
 ```
 
 ---
@@ -162,7 +152,7 @@ Uploaded CSV → Frontend Replay Parser → Replay Timeline → Shared Dashboard
 - The frontend can trigger ROSbag recording via `/bag` endpoints
 - The backend publishes rosbag recording state on `dashboard_control/bag_recording`
 - ROSbag recording consumers should subscribe to that control topic and start on `1`, stop on `0`
-- Local dashboard replay supports uploaded CSV telemetry exports
+- CSV telemetry import adapters remain available as unconnected starter code
 
 ---
 
@@ -199,8 +189,8 @@ created. The removed `rosbags` dependency served only the removed converter;
 The ROS Docker base, `backend/entrypoint.sh`, and
 `backend/super_client.example.xml` are retained because the current code requires
 them. All three Compose files now build the backend from the repository root so
-the relocated mock publisher can be copied into the image. The frontend and its
-build context are unchanged. Backend documentation is consolidated here.
+the relocated mock publisher can be copied into the image. The frontend build
+context remains `frontend/`. Backend documentation is consolidated here.
 
 ### Running the backend
 
@@ -246,3 +236,168 @@ These tests cover state extraction, telemetry broadcast envelopes, camera JPEGs,
 control responses, the standalone localization prototype, startup cleanup, and
 the actual container entrypoint serving images from the relocated mock publisher.
 They use localhost-only ROS in a separate domain and do not connect to the vehicle.
+
+## Repository migration accounting
+
+This is organization and preservation, not implementation of the future
+four-section UI or Zenoh transport. The original live screen's card order,
+sizing, scroll container, branding, visible speed/metrics and shared pause
+semantics are retained. `App.tsx` owns the shared display history; recording
+still accumulates incoming live samples while the display is paused, as before.
+
+| Previous source | Destination / disposition |
+| --- | --- |
+| App.tsx; Header.tsx; DashboardCard.tsx; pages/Data.tsx | App.tsx: original theme, subscription, header branding, card renderer, scroll container and live composition. Only replay/sidebar navigation is excluded. |
+| layouts/InteractiveGrid.tsx | Shared display history/pause in App.tsx; full chart/map bindings in Localization.tsx; signals, speed and recording state/calculations in Autonomy.tsx; camera mounting in App.tsx. Only lap actions/state/display and the replay-only local start/stop toggle are excluded. |
+| components/CameraFeed.tsx | panels/Perception.tsx, both original camera streams retained. |
+| components/CompactChart.tsx; MapComponent.tsx; EmptyTelemetryState.tsx; utils/locations.ts | panels/Localization.tsx, including all chart interactions, map presets/markers and fallback. GoogleMap is an import alias to avoid shadowing the chart's built-in Map. |
+| components/SignalTile.tsx; MetricPanel.tsx; GaugePointer.tsx | panels/Autonomy.tsx, including the original inactive pointer implementation. |
+| components/RunControlButtons.tsx | Controls.tsx, with request/error helpers in data.ts; callbacks, guards and request semantics unchanged. |
+| utils/Socket.ts; ws.ts | data.ts; the complete SocketData interface is in types.ts. The unused startup dummy-data evaluation is omitted, with its fixture retained in tests. |
+| utils/telemetry.ts | data.ts; all generic mathematics/formatting retained. Only calculateLapTimes is excluded. |
+| pages/Replay.tsx | CSV parser, normalization, numeric/timestamp/unit helpers and row adapters retained in data.ts. Playback UI/scheduling, upload handler and obsolete HTTP upload request excluded. |
+| utils/data.ts | tests/frontend.test.ts, original sample fixture retained. |
+| index.css; main.tsx; index.html | styles.css is identical to index.css; main.tsx only changes that import; index.html is unchanged. |
+| Run Summary latency expression | Diagnostics.tsx; same truthiness/rounding and title placement. |
+| components/SideBar.tsx | Empty sidebar and its presentation-only tile wrapper excluded; no telemetry implementation existed there. |
+| frontend/README.md | Contents consolidated into the frontend development reference below; root title, team credits and media retained. |
+| docker-compose.yml | Exact rename to compose.yaml. Dev/prod variants, Dockerfiles, server, manifests, lockfile, assets, environment examples and Nix files are unchanged. |
+| .gitignore | Only frontend/dist/ added for generated build output. |
+
+Planning.tsx is an inactive placeholder. New FSM, overlays, fused pose, IMU and
+planning inputs remain unimplemented; the old code remains the starter code.
+The approved backend and tools/mock_vehicle.py are unchanged from c569473.
+No new configuration schema, proxy, package manager, dependency or transport
+has been introduced. config.yaml/nginx.conf and replacement lockfiles remain
+deferred rather than being populated with invented settings.
+
+### Verification
+
+From the repository root:
+
+```sh
+bun test tests/frontend.test.ts tests/migration.test.ts
+python3 -m unittest discover -s tests -v
+docker compose --env-file .env.example config --quiet
+docker compose --env-file .env.example -f docker-compose.dev.yml config --quiet
+docker compose --env-file .env.example -f docker-compose.prod.yml config --quiet
+```
+
+The migration tests account for baseline files/declarations against c569473
+and exercise retained state/control wiring using mocked React hooks and
+requests. They require the repository's Git history and installed frontend
+dependencies. The build command remains `cd frontend && bun run build`.
+Inherited lint findings are not suppressed or behavior-refactored in this pass.
+ROS container checks are described above; mocks do not establish real-vehicle
+or future Zenoh integration.
+
+## Frontend development reference
+
+### Getting Started
+
+This project uses **Bun** as a package manager and runtime.
+Run the following command in the frontend directory to start a dev environment.
+
+```
+bun run dev
+```
+
+This should start a dev environment at `port 5173` on your machine.
+
+Make sure to specify a `VITE_GOOGLE_MAPS_API_KEY` and a
+`VITE_GOOGLE_MAP_ID` in the root `.env` file (Vite uses `envDir: ".."`). Follow the
+format in `frontend/.env.example`. It's also listed here for reference.
+
+```env
+VITE_GOOGLE_MAPS_API_KEY=Your_Google_Maps_API_Key
+VITE_GOOGLE_MAP_ID=Your_Google_Map_ID
+```
+
+To get your own **Google Maps API** keys and map ID,\
+Head to the [Google Cloud Console](https://console.cloud.google.com/google/maps-hosted/overview),
+create a new project, and go to `Keys and Credentials` to get your Google Maps `API_KEY`or
+generate your own. Then, navigate to the `Map Management` tab, and create a new map to generate your own `MAP_ID`.\
+Refer to the [Google Maps API](https://developers.google.com/maps/documentation/javascript/get-api-key) getting
+started guide for more information.
+
+The same root `.env` is used for Compose and isolated frontend development.
+
+### Design
+
+#### React + TypeScript + Vite
+
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+
+Currently, two official plugins are available:
+
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+
+**TailwindCSS + MUICharts + DaisyUI**\
+This project utilizes these libraries for reusable components and style classes in React.
+These are especially important for the Line Charts, buttons, menus and dashboard tile components.
+
+#### React Compiler
+
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+
+#### Expanding the ESLint configuration
+
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+
+```js
+export default defineConfig([
+  globalIgnores(["dist"]),
+  {
+    files: ["**/*.{ts,tsx}"],
+    extends: [
+      // Other configs...
+
+      // Remove tseslint.configs.recommended and replace with this
+      tseslint.configs.recommendedTypeChecked,
+      // Alternatively, use this for stricter rules
+      tseslint.configs.strictTypeChecked,
+      // Optionally, add this for stylistic rules
+      tseslint.configs.stylisticTypeChecked,
+
+      // Other configs...
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+]);
+```
+
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+
+```js
+// eslint.config.js
+import reactX from "eslint-plugin-react-x";
+import reactDom from "eslint-plugin-react-dom";
+
+export default defineConfig([
+  globalIgnores(["dist"]),
+  {
+    files: ["**/*.{ts,tsx}"],
+    extends: [
+      // Other configs...
+      // Enable lint rules for React
+      reactX.configs["recommended-typescript"],
+      // Enable lint rules for React DOM
+      reactDom.configs.recommended,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+]);
+```
