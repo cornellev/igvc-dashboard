@@ -1,7 +1,6 @@
 import { useState } from "react";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+import { postControlRequest } from "./data";
 
 export const RUN_CONTROL_BUTTON_CLASS =
   "rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] transition focus:outline-0 disabled:cursor-not-allowed disabled:opacity-50";
@@ -79,7 +78,7 @@ export function AutonomyControlButton(props: EndpointControlButtonProps) {
   );
 }
 
-function EndpointStartStopButton({
+export function EndpointStartStopButton({
   startPath,
   stopPath,
   startLabel,
@@ -105,7 +104,10 @@ function EndpointStartStopButton({
     setIsPending(true);
 
     try {
-      await postControlRequest(shouldStart ? startPath : stopPath, failureLabel);
+      await postControlRequest(
+        shouldStart ? startPath : stopPath,
+        failureLabel,
+      );
       setIsRunning(shouldStart);
 
       if (shouldStart) {
@@ -133,31 +135,22 @@ function EndpointStartStopButton({
   );
 }
 
-async function postControlRequest(path: string, fallbackMessage: string) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-  });
-
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response, fallbackMessage));
-  }
-}
-
-async function readErrorMessage(response: Response, fallbackMessage: string) {
-  try {
-    const payload = (await response.json()) as { detail?: unknown };
-
-    if (typeof payload.detail === "string" && payload.detail.length > 0) {
-      return payload.detail;
-    }
-  } catch {
-    return `${fallbackMessage} (${response.status})`;
-  }
-
-  return `${fallbackMessage} (${response.status})`;
-}
-
 function getErrorMessage(error: unknown, fallbackMessage: string) {
   return error instanceof Error ? error.message : fallbackMessage;
+}
+
+/** Command controls are separate from monitoring; the existing callback/guard API remains available. */
+export default function Controls({
+  recording = {},
+  autonomy = {},
+}: {
+  recording?: EndpointControlButtonProps;
+  autonomy?: EndpointControlButtonProps;
+}) {
+  return (
+    <>
+      <RosbagControlButton {...recording} />
+      <AutonomyControlButton {...autonomy} />
+    </>
+  );
 }

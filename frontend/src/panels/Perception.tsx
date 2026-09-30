@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { getWebSocketUrl } from "../utils/ws";
+import { getWebSocketUrl } from "../data";
 
-export default function CameraFeed({ side }: { side: "left" | "right" }) {
+export function CameraFeed({ side }: { side: "left" | "right" }) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [hasFrame, setHasFrame] = useState(false);
 
@@ -62,3 +62,5 @@ export default function CameraFeed({ side }: { side: "left" | "right" }) {
     </div>
   );
 }
+
+export default CameraFeed;
