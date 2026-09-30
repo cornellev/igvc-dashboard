@@ -1,8 +1,8 @@
-# Intelligent Ground Vehicle Competition (IGVC) Dashboard
+# Autonomy Dashboard
 
 ## Team Members
 
-Ajay, Donte, Eric, Shreyaa
+Adi, Julia
 
 ---
 
@@ -236,60 +236,6 @@ These tests cover state extraction, telemetry broadcast envelopes, camera JPEGs,
 control responses, the standalone localization prototype, startup cleanup, and
 the actual container entrypoint serving images from the relocated mock publisher.
 They use localhost-only ROS in a separate domain and do not connect to the vehicle.
-
-## Repository migration accounting
-
-This is organization and preservation, not implementation of the future
-four-section UI or Zenoh transport. The original live screen's card order,
-sizing, scroll container, branding, visible speed/metrics and shared pause
-semantics are retained. `App.tsx` owns the shared display history; recording
-still accumulates incoming live samples while the display is paused, as before.
-
-| Previous source | Destination / disposition |
-| --- | --- |
-| App.tsx; Header.tsx; DashboardCard.tsx; pages/Data.tsx | App.tsx: original theme, subscription, header branding, card renderer, scroll container and live composition. Only replay/sidebar navigation is excluded. |
-| layouts/InteractiveGrid.tsx | Shared display history/pause in App.tsx; full chart/map bindings in Localization.tsx; signals, speed and recording state/calculations in Autonomy.tsx; camera mounting in App.tsx. Only lap actions/state/display and the replay-only local start/stop toggle are excluded. |
-| components/CameraFeed.tsx | panels/Perception.tsx, both original camera streams retained. |
-| components/CompactChart.tsx; MapComponent.tsx; EmptyTelemetryState.tsx; utils/locations.ts | panels/Localization.tsx, including all chart interactions, map presets/markers and fallback. GoogleMap is an import alias to avoid shadowing the chart's built-in Map. |
-| components/SignalTile.tsx; MetricPanel.tsx; GaugePointer.tsx | panels/Autonomy.tsx, including the original inactive pointer implementation. |
-| components/RunControlButtons.tsx | Controls.tsx, with request/error helpers in data.ts; callbacks, guards and request semantics unchanged. |
-| utils/Socket.ts; ws.ts | data.ts; the complete SocketData interface is in types.ts. The unused startup dummy-data evaluation is omitted, with its fixture retained in tests. |
-| utils/telemetry.ts | data.ts; all generic mathematics/formatting retained. Only calculateLapTimes is excluded. |
-| pages/Replay.tsx | CSV parser, normalization, numeric/timestamp/unit helpers and row adapters retained in data.ts. Playback UI/scheduling, upload handler and obsolete HTTP upload request excluded. |
-| utils/data.ts | tests/frontend.test.ts, original sample fixture retained. |
-| index.css; main.tsx; index.html | styles.css is identical to index.css; main.tsx only changes that import; index.html is unchanged. |
-| Run Summary latency expression | Diagnostics.tsx; same truthiness/rounding and title placement. |
-| components/SideBar.tsx | Empty sidebar and its presentation-only tile wrapper excluded; no telemetry implementation existed there. |
-| frontend/README.md | Contents consolidated into the frontend development reference below; root title, team credits and media retained. |
-| docker-compose.yml | Exact rename to compose.yaml. Dev/prod variants, Dockerfiles, server, manifests, lockfile, assets, environment examples and Nix files are unchanged. |
-| .gitignore | Only frontend/dist/ added for generated build output. |
-
-Planning.tsx is an inactive placeholder. New FSM, overlays, fused pose, IMU and
-planning inputs remain unimplemented; the old code remains the starter code.
-The approved backend and tools/mock_vehicle.py are unchanged from c569473.
-No new configuration schema, proxy, package manager, dependency or transport
-has been introduced. config.yaml/nginx.conf and replacement lockfiles remain
-deferred rather than being populated with invented settings.
-
-### Verification
-
-From the repository root:
-
-```sh
-bun test tests/frontend.test.ts tests/migration.test.ts
-python3 -m unittest discover -s tests -v
-docker compose --env-file .env.example config --quiet
-docker compose --env-file .env.example -f docker-compose.dev.yml config --quiet
-docker compose --env-file .env.example -f docker-compose.prod.yml config --quiet
-```
-
-The migration tests account for baseline files/declarations against c569473
-and exercise retained state/control wiring using mocked React hooks and
-requests. They require the repository's Git history and installed frontend
-dependencies. The build command remains `cd frontend && bun run build`.
-Inherited lint findings are not suppressed or behavior-refactored in this pass.
-ROS container checks are described above; mocks do not establish real-vehicle
-or future Zenoh integration.
 
 ## Frontend development reference
 
