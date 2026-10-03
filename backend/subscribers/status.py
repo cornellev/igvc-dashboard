@@ -1,4 +1,5 @@
-"""Existing spi_data ROS subscriber; FSM and health inputs are not defined yet."""
+"""Existing spi_data ROS subscriber; FSM and health inputs are not defined yet.
+Contains all the Telemetry Data from sensors (previously old subscriber from old RED)"""
 
 import rclpy
 from rclpy.node import Node

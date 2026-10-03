@@ -1,13 +1,14 @@
-"""Checks for the Zenoh lidar path: ZenohClient -> LidarSubscriber.
+"""Checks for the Zenoh lidar path: ZenohClient -> LidarSubscriber / CostmapSubscriber.
 
-Unit tests publish frames encoded exactly like `encode_points` in
-virtual-rgbd-sensor's rslidar_sdk_node.rs on an isolated session (no multicast
-discovery), so they never touch the LAN and need no lidar:
+Unit tests publish frames encoded exactly like `encode_points` and
+`encode_costmap` in virtual-rgbd-sensor's rslidar_sdk_node.rs on an isolated
+session (no multicast discovery), so they never touch the LAN and need no lidar:
 
     python tests/test_lidar_zenoh.py
 
 Live mode subscribes with the dashboard's default Zenoh config and prints the
-frames the real `rslidar_viz` publisher sends (start it first):
+point cloud and costmap frames the real `rslidar_viz` publisher sends (start it
+first):
 
     python tests/test_lidar_zenoh.py --live [seconds]
 
@@ -42,6 +43,13 @@ def stub_missing_ros_modules():
         sys.modules["cv2"] = MagicMock()
 
 
+"""
+# Mimics the publisher from virtual-rgbd-sensor in Rust.
+#
+# Fake publisher that packs bits the same way as the
+# original Rust repo
+"""
+
 def encode_points(stamp_sec, stamp_nanosec, data, point_step):
     """Mirror of `encode_points` in rslidar_sdk_node.rs."""
     width = len(data) // point_step
@@ -53,8 +61,17 @@ def segmented_data(points):
     return b"".join(struct.pack("<ffffi", *p) for p in points)
 
 
+def encode_costmap(stamp_sec, stamp_nanosec, size_x, size_y, resolution, origin_x, origin_y, costs):
+    """Mirror of `encode_costmap` in rslidar_sdk_node.rs: 32-byte header, then row-major u8 costs."""
+    header = struct.pack("<iIIIfffI", stamp_sec, stamp_nanosec, size_x, size_y,
+                         resolution, origin_x, origin_y, 0)
+    return header + bytes(costs)
+
+
 @unittest.skipUnless(HAS_ZENOH, "pip install eclipse-zenoh")
-class LidarSubscriberTests(unittest.TestCase):
+class ZenohSubscriberTestCase(unittest.TestCase):
+    """Starts a ZenohClient on an isolated session for each test."""
+
     def setUp(self):
         stub_missing_ros_modules()
         import zenoh
@@ -66,21 +83,27 @@ class LidarSubscriberTests(unittest.TestCase):
         config.insert_json5("scouting/multicast/enabled", "false")
         config.insert_json5("listen/endpoints", "[]")
 
-        self.key = zenoh_client.LIDAR_KEY
+        self.lidar_key = zenoh_client.LIDAR_KEY
+        self.costmap_key = zenoh_client.COSTMAP_KEY
         self.client = zenoh_client.ZenohClient(config)
         self.client.start()
         self.addCleanup(self.client.stop)
 
-    def publish_and_wait(self, payload):
-        before = self.client.lidar.get_latest()
-        self.client.session.put(self.key, payload)
+    def put_and_wait(self, subscriber, key, payload):
+        before = subscriber.get_latest()
+        self.client.session.put(key, payload)
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline:
-            latest = self.client.lidar.get_latest()
+            latest = subscriber.get_latest()
             if latest is not before:
                 return latest
             time.sleep(0.01)
-        return self.client.lidar.get_latest()
+        return subscriber.get_latest()
+
+
+class LidarSubscriberTests(ZenohSubscriberTestCase):
+    def publish_and_wait(self, payload):
+        return self.put_and_wait(self.client.lidar, self.lidar_key, payload)
 
     def test_segmented_frame_is_decoded(self):
         points = [
@@ -111,6 +134,51 @@ class LidarSubscriberTests(unittest.TestCase):
         for payload in (b"short", truncated, bad_step):
             self.assertIs(self.publish_and_wait(payload), good)
 
+    def test_costmap_does_not_reach_lidar(self):
+        self.put_and_wait(self.client.costmap, self.costmap_key,
+                          encode_costmap(1, 0, 2, 2, 0.1, 0.0, 0.0, [0, 0, 0, 0]))
+        self.assertIsNone(self.client.lidar.get_latest())
+
+
+class CostmapSubscriberTests(ZenohSubscriberTestCase):
+    def publish_and_wait(self, payload):
+        return self.put_and_wait(self.client.costmap, self.costmap_key, payload)
+
+    def test_costmap_is_decoded(self):
+        # 3 wide x 2 tall, row-major: row 0 is [free, inflated, lethal], row 1 is [unknown, free, inscribed]
+        costs = [0, 128, 254,
+                 255, 0, 253]
+        stamp, info, grid = self.publish_and_wait(
+            encode_costmap(7, 250_000_000, 3, 2, 0.05, -1.5, 2.25, costs))
+
+        self.assertAlmostEqual(stamp, 7.25)
+        self.assertAlmostEqual(info["resolution"], 0.05, places=6)
+        self.assertEqual(info["origin_x"], -1.5)
+        self.assertEqual(info["origin_y"], 2.25)
+        self.assertEqual(grid.dtype, np.uint8)
+        self.assertEqual(grid.shape, (2, 3))    # (size_y, size_x)
+        self.assertEqual(grid.tolist(), [[0, 128, 254], [255, 0, 253]])
+
+    def test_trailing_bytes_are_ignored(self):
+        _, _, grid = self.publish_and_wait(
+            encode_costmap(1, 0, 2, 1, 0.1, 0.0, 0.0, [1, 2, 99, 99]))
+        self.assertEqual(grid.tolist(), [[1, 2]])
+
+    def test_malformed_costmaps_keep_previous_frame(self):
+        good = self.publish_and_wait(encode_costmap(1, 0, 2, 2, 0.1, 0.0, 0.0, [0, 1, 2, 3]))
+        self.assertIsNotNone(good)
+
+        truncated = encode_costmap(2, 0, 2, 2, 0.1, 0.0, 0.0, [0, 1, 2, 3])[:-1]
+        zero_width = encode_costmap(2, 0, 0, 2, 0.1, 0.0, 0.0, [])
+        zero_height = encode_costmap(2, 0, 2, 0, 0.1, 0.0, 0.0, [])
+        for payload in (b"short", b"\0" * 31, truncated, zero_width, zero_height):
+            self.assertIs(self.publish_and_wait(payload), good)
+
+    def test_point_cloud_does_not_reach_costmap(self):
+        self.put_and_wait(self.client.lidar, self.lidar_key,
+                          encode_points(1, 0, segmented_data([(1, 1, 1, 1, 1)]), 20))
+        self.assertIsNone(self.client.costmap.get_latest())
+
 
 def live(seconds):
     stub_missing_ros_modules()
@@ -118,17 +186,30 @@ def live(seconds):
 
     client = zenoh_client.ZenohClient()
     client.start()
-    print(f"listening on {zenoh_client.LIDAR_KEY} for {seconds:.0f}s...")
+    print(f"listening on {zenoh_client.LIDAR_KEY} and {zenoh_client.COSTMAP_KEY} for {seconds:.0f}s...")
     last_stamp = None
+    last_costmap_stamp = None
     frames = 0
+    costmap_frames = 0
     try:
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
+            costmap = client.costmap.get_latest()
+            if costmap is not None and costmap[0] != last_costmap_stamp:
+                last_costmap_stamp, info, grid = costmap
+                costmap_frames += 1
+                size_y, size_x = grid.shape
+                print(f"costmap ts={last_costmap_stamp:.6f} size={size_x}x{size_y}"
+                      f" res={info['resolution']:.3f}"
+                      f" origin=({info['origin_x']:.2f},{info['origin_y']:.2f})"
+                      f" | lethal={int((grid == 254).sum())} unknown={int((grid == 255).sum())}"
+                      f" free={int((grid == 0).sum())}", flush=True)
+
             latest = client.lidar.get_latest()
             if latest is not None and latest[0] != last_stamp:
                 last_stamp, pts = latest
                 frames += 1
-                line = f"ts={last_stamp:.6f} valid_points={len(pts):5}"
+                line = f"points  ts={last_stamp:.6f} valid_points={len(pts):5}"
                 if len(pts):
                     mn, mx = pts[:, :3].min(0), pts[:, :3].max(0)
                     line += (f" | bbox x[{mn[0]:.2f},{mx[0]:.2f}] y[{mn[1]:.2f},{mx[1]:.2f}]"
@@ -140,8 +221,8 @@ def live(seconds):
             time.sleep(0.01)
     finally:
         client.stop()
-    print(f"received {frames} frames")
-    return frames
+    print(f"received {frames} point cloud frames and {costmap_frames} costmap frames")
+    return frames and costmap_frames
 
 
 if __name__ == "__main__":

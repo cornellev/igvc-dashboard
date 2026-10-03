@@ -81,3 +81,32 @@ class LidarSubscriber:
     def close(self):
         self._sub.undeclare()
 
+
+"""Zenoh costmap subscriber; path and waypoint inputs are not defined yet."""
+
+class CostmapSubscriber:
+    def __init__(self, session: zenoh.Session, key: str = "rslidar/costmap"):
+        self._lock = threading.Lock()
+        self._latest = None          # (stamp, info dict, costs ndarray[size_y, size_x])
+        self._frame_count = 0
+        self._sub = session.declare_subscriber(key, self._callback)
+
+    def _callback(self, sample):
+        b = sample.payload.to_bytes()
+        if len(b) < 32:
+            return
+        sec, nsec, size_x, size_y, resolution, origin_x, origin_y, _ = struct.unpack_from("<iIIIfffI", b, 0)
+        if size_x == 0 or size_y == 0 or len(b) - 32 < size_x * size_y:
+            return
+        costs = np.frombuffer(b, np.uint8, count=size_x * size_y, offset=32).reshape(size_y, size_x)
+        info = {"resolution": resolution, "origin_x": origin_x, "origin_y": origin_y}
+        with self._lock:
+            self._latest = (sec + nsec * 1e-9, info, costs)
+            self._frame_count += 1
+
+    def get_latest(self):
+        with self._lock:
+            return self._latest
+
+    def close(self):
+        self._sub.undeclare()

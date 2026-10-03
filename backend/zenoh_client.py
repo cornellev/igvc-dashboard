@@ -16,11 +16,12 @@ from rclpy.executors import SingleThreadedExecutor
 
 from controls import DashboardControlPublisher
 from state import DashboardState
-from subscribers.perception import CameraSubscriber, LidarSubscriber
+from subscribers.perception import CameraSubscriber, LidarSubscriber, CostmapSubscriber
 from subscribers.status import DataSubscriber
 
 SAMPLE_RATE_HZ = 40
 LIDAR_KEY = os.getenv("LIDAR_ZENOH_KEY", "rslidar/points/segmented")
+COSTMAP_KEY = os.getenv("COSTMAP_ZENOH_KEY", "rslidar/costmap")
 
 class ZenohClient:
     """Own the shared Zenoh session and the subscribers declared on it."""
@@ -38,12 +39,17 @@ class ZenohClient:
             if config is None:
                 config = zenoh.Config.from_env() if os.getenv("ZENOH_CONFIG") else zenoh.Config()
             self.session = zenoh.open(config)
+            
             print("[ZENOH] session opened", flush=True)
 
             # All subscribers go here
             self.lidar = LidarSubscriber(self.session, LIDAR_KEY)
             self._subscribers.append(self.lidar)
+            self.costmap = CostmapSubscriber(self.session, COSTMAP_KEY)
+            self._subscribers.append(self.costmap)
+
             print(f"[ZENOH] subscribed to {LIDAR_KEY}", flush=True)
+
         except Exception:
             self.stop()
             raise
@@ -121,6 +127,8 @@ def auxiliary_spin_loop(nodes: list, stop_evt: threading.Event):
             ex.remove_node(node)
         print("[ROS] auxiliary spin loop exited", flush=True)
 
+
+""" Previous ROS Client (was slightly adjusted for Zenoh migration during refactoring)"""
 
 class LegacyRosClient:
     """Own the existing ROS resources while their future module takes shape."""
