@@ -4,10 +4,15 @@
 // dials the lidar publisher (virtual-rgbd-sensor's rslidar_viz, running on the
 // host) directly on its fixed port. Keep the port in sync with
 // ZENOH_LISTEN_ENDPOINT in rslidar_sdk_node.rs.
+//
+// The second endpoint is the mock camera (tools/mock_vehicle.py, started in the
+// same container when RUN_MOCK_CAMERA=true); keep it in sync with
+// MOCK_ZENOH_LISTEN. Zenoh keeps retrying endpoints that aren't up yet, so
+// either publisher may be absent.
 {
   mode: "peer",
   connect: {
-    endpoints: ["tcp/host.docker.internal:7447"],
+    endpoints: ["tcp/host.docker.internal:7447", "tcp/127.0.0.1:7448"],
   },
   scouting: {
     multicast: { enabled: false },

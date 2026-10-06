@@ -1,14 +1,13 @@
 """Shared Zenoh client, plus the ROS filler that still runs alongside it.
 
 ZenohClient owns the one Zenoh session and the subscribers declared on it
-(currently just the lidar point cloud). LegacyRosClient is the lifecycle code
-extracted from main.py. It deliberately uses the existing ROS subscribers,
-executors, topics, and control publisher, and starts/stops a ZenohClient too.
+(spi_data telemetry, ZED cameras, lidar point cloud, costmap). LegacyRosClient
+is the lifecycle code extracted from main.py. It still owns the ROS control
+publisher, and starts/stops a ZenohClient too.
 """
 
 import os
 import threading
-import time
 
 import rclpy
 import zenoh
@@ -20,14 +19,18 @@ from subscribers.perception import CameraSubscriber, LidarSubscriber, CostmapSub
 from subscribers.status import DataSubscriber
 
 SAMPLE_RATE_HZ = 40
+TELEMETRY_KEY = os.getenv("TELEMETRY_ZENOH_KEY", "spi_data")
 LIDAR_KEY = os.getenv("LIDAR_ZENOH_KEY", "rslidar/points/segmented")
 COSTMAP_KEY = os.getenv("COSTMAP_ZENOH_KEY", "rslidar/costmap")
+CAMERA_LEFT_KEY = os.getenv("CAMERA_LEFT_ZENOH_KEY", "zed/left/image_raw")
+CAMERA_RIGHT_KEY = os.getenv("CAMERA_RIGHT_ZENOH_KEY", "zed/right/image_raw")
 
 class ZenohClient:
     """Own the shared Zenoh session and the subscribers declared on it."""
 
-    def __init__(self, config: zenoh.Config | None = None):
+    def __init__(self, config: zenoh.Config | None = None, state: DashboardState | None = None):
         self._config = config
+        self.state = state if state is not None else DashboardState()
         self.session = None
         self._subscribers = []
 
@@ -43,12 +46,18 @@ class ZenohClient:
             print("[ZENOH] session opened", flush=True)
 
             # All subscribers go here
+            self.telemetry = DataSubscriber(self.session, TELEMETRY_KEY, self.state, SAMPLE_RATE_HZ)
+            self._subscribers.append(self.telemetry)
+            self.camera_left = CameraSubscriber(self.session, CAMERA_LEFT_KEY, "camera_left")
+            self._subscribers.append(self.camera_left)
+            self.camera_right = CameraSubscriber(self.session, CAMERA_RIGHT_KEY, "camera_right")
+            self._subscribers.append(self.camera_right)
             self.lidar = LidarSubscriber(self.session, LIDAR_KEY)
             self._subscribers.append(self.lidar)
             self.costmap = CostmapSubscriber(self.session, COSTMAP_KEY)
             self._subscribers.append(self.costmap)
 
-            print(f"[ZENOH] subscribed to {LIDAR_KEY}", flush=True)
+            print(f"[ZENOH] subscribed to {TELEMETRY_KEY}, {LIDAR_KEY}, {COSTMAP_KEY}", flush=True)
 
         except Exception:
             self.stop()
@@ -62,54 +71,6 @@ class ZenohClient:
         if self.session is not None:
             self.session.close()
             self.session = None
-
-
-def ros_spin_loop(node: DataSubscriber, stop_evt: threading.Event, state: DashboardState):
-    ex = SingleThreadedExecutor()
-    ex.add_node(node)
-    last_stamp = None
-    last_data_time = time.monotonic()
-    last_append_time = 0.0
-    sample_interval = 1.0 / SAMPLE_RATE_HZ
-    DATA_TIMEOUT_SEC = 5.0
-    warned = False
-    try:
-        i = 0
-        while rclpy.ok() and not stop_evt.is_set():
-            try:
-                ex.spin_once(timeout_sec=0.1)
-            except Exception as e:
-                print(f"[ROS] ERROR: exception during spin: {e}", flush=True)
-            i += 1
-            if i % 50 == 0:
-                print("[ROS] spinning...")
-
-            data, stamp = node.get_latest()
-            if data is None or stamp is None:
-                if not warned and time.monotonic() - last_data_time > DATA_TIMEOUT_SEC:
-                    print(f"[ROS] WARN: no data received for >{DATA_TIMEOUT_SEC}s", flush=True)
-                    warned = True
-                continue
-
-            last_data_time = time.monotonic()
-            warned = False
-
-            if last_stamp is not None and stamp <= last_stamp:
-                continue
-            last_stamp = stamp
-
-            # Preserve the existing sampling behavior during the layout change.
-            now = time.monotonic()
-            if now - last_append_time < sample_interval:
-                continue
-            last_append_time = now
-
-            state.append_snapshot(data, stamp)
-    except Exception as e:
-        print(f"[ROS] ERROR: exception in spin loop: {e}", flush=True)
-    finally:
-        ex.remove_node(node)
-        print("[ROS] spin loop exited", flush=True)
 
 
 def auxiliary_spin_loop(nodes: list, stop_evt: threading.Event):
@@ -139,24 +100,20 @@ class LegacyRosClient:
         self._initialized = False
         self._nodes = []
         self._threads = []
-        self.zenoh = ZenohClient()
+        self.zenoh = ZenohClient(state=state)
 
     def start(self):
         try:
             self.zenoh.start()
+            self.telemetry = self.zenoh.telemetry
+            self.camera_left = self.zenoh.camera_left
+            self.camera_right = self.zenoh.camera_right
             self.lidar = self.zenoh.lidar
+            self.costmap = self.zenoh.costmap
 
             rclpy.init()
             self._initialized = True
             print("[ROS] rclpy initialized", flush=True)
-
-            self.node = DataSubscriber("spi_data", self.state)
-            self._nodes.append(self.node)
-
-            self.camera_left = CameraSubscriber("zed/left/image_raw", "camera_left")
-            self._nodes.append(self.camera_left)
-            self.camera_right = CameraSubscriber("zed/right/image_raw", "camera_right")
-            self._nodes.append(self.camera_right)
 
             self.controls = DashboardControlPublisher(
                 os.getenv("DASHBOARD_CONTROL_TOPIC", "dashboard_control"),
@@ -165,21 +122,13 @@ class LegacyRosClient:
             self._nodes.append(self.controls)
 
             # Localization remains a standalone prototype, as in the old app.
-            ros_thread = threading.Thread(
-                target=ros_spin_loop,
-                args=(self.node, self.stop_evt, self.state),
-                daemon=True,
-            )
-            ros_thread.start()
-            self._threads.append(ros_thread)
-
-            camera_thread = threading.Thread(
+            controls_thread = threading.Thread(
                 target=auxiliary_spin_loop,
-                args=([self.camera_left, self.camera_right, self.controls], self.stop_evt),
+                args=([self.controls], self.stop_evt),
                 daemon=True,
             )
-            camera_thread.start()
-            self._threads.append(camera_thread)
+            controls_thread.start()
+            self._threads.append(controls_thread)
         except Exception:
             self.stop()
             raise

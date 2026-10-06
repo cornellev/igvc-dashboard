@@ -1,74 +1,92 @@
-"""Existing spi_data ROS subscriber; FSM and health inputs are not defined yet.
+"""Zenoh spi_data subscriber; FSM and health inputs are not defined yet.
 Contains all the Telemetry Data from sensors (previously old subscriber from old RED)"""
 
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import String
 import json
-from rclpy.qos import QoSProfile
+import os
+import struct
+import threading
+import time
+
+import zenoh
+
 from state import DashboardState
 
-class DataSubscriber(Node):
-    def __init__(self, topic, state: DashboardState | None = None):
-        super().__init__('data_subscriber')
-        
-        self.get_logger().info(f'Subscribing to ROS topic: {topic}')
+SAMPLE_RATE_HZ = 40
 
-        self._topic = topic
+
+def decode_json_payload(b: bytes) -> str:
+    """Return the JSON text carried by a spi_data payload.
+
+    A native Zenoh publisher sends the UTF-8 JSON as-is. Through
+    zenoh-bridge-ros2dds the payload is still a CDR-serialized std_msgs/String:
+    a 4-byte encapsulation header (0x00, 0x00 big- or 0x01 little-endian, then
+    2 option bytes), a u32 length that counts the trailing NUL, then the string.
+    JSON text never starts with a 0x00 byte, so the two can't be confused.
+    """
+    if len(b) >= 8 and b[0] == 0 and b[1] in (0, 1):
+        (n,) = struct.unpack_from("<I" if b[1] == 1 else ">I", b, 4)
+        if 8 + n <= len(b):
+            return b[8:8 + n].rstrip(b"\0").decode("utf-8")
+    return b.decode("utf-8")
+
+
+class DataSubscriber:
+    def __init__(self, session: zenoh.Session, key: str = "spi_data",
+                 state: DashboardState | None = None, sample_rate_hz: float = SAMPLE_RATE_HZ):
+        self._key = key
         self._state = state if state is not None else DashboardState()
-        self._latest_raw = None          # latest raw JSON string
-        self.running = True
+        self._lock = threading.Lock()
+        self._sample_interval = 1.0 / sample_rate_hz
+        self._last_append_time = float("-inf")   # monotonic() can start near 0, so 0.0 would skip early messages
+        self._sub = session.declare_subscriber(key, self._callback)
 
-        qos = QoSProfile(depth=1)  # keep only the newest message
-        
-        self.subscription = self.create_subscription(
-            String,
-            topic,
-            self.listener_callback,
-            qos
-        )
-        self.subscription  # prevent unused variable warning
+    def _callback(self, sample):
+        self.handle_payload(sample.payload.to_bytes())
 
-    def listener_callback(self, msg: String):
-        
+    def handle_payload(self, b: bytes):
         try:
-            print(msg)
-            data = json.loads(msg.data)
-        except json.JSONDecodeError as e:
-            self._state.invalidate_latest(self._topic)
-            self.get_logger().error(f"Failed to decode message: {msg.data}, error: {e}")
-            return
-        except Exception as e:
-            self._state.invalidate_latest(self._topic)
-            self.get_logger().error(f"Unexpected error in callback: {e}")
+            data = json.loads(decode_json_payload(b))
+        except ValueError as e:  # covers JSONDecodeError and UnicodeDecodeError
+            self._state.invalidate_latest(self._key)
+            print(f"[ZENOH] {self._key}: dropping malformed payload ({len(b)} bytes): {e}", flush=True)
             return
 
-        self._latest_raw = msg.data
-        self._state.update_latest(self._topic, data, self.get_clock().now().nanoseconds)
+        stamp = time.time_ns()
+        self._state.update_latest(self._key, data, stamp)
 
-        self.get_logger().info(f"Received data: {data}")
+        # Previously done by ros_spin_loop: forward to the broadcaster at most
+        # SAMPLE_RATE_HZ times a second; anything in between only updates latest.
+        now = time.monotonic()
+        with self._lock:
+            if now - self._last_append_time < self._sample_interval:
+                return
+            self._last_append_time = now
+        self._state.append_snapshot(data, stamp)
 
     # Returns (data_dict_or_None, recv_time_ns_or_None)
     def get_latest(self):
-        return self._state.get_latest(self._topic)
-    
-    def destroy_node(self):
-        super().destroy_node()
+        return self._state.get_latest(self._key)
+
+    def close(self):
+        self._sub.undeclare()
+
 
 # use to test
-def main(args=None):
-    rclpy.init(args=args)
-    node = DataSubscriber("spi_data")
+def main():
+    config = zenoh.Config.from_env() if os.getenv("ZENOH_CONFIG") else zenoh.Config()
+    session = zenoh.open(config)
+    node = DataSubscriber(session, os.getenv("TELEMETRY_ZENOH_KEY", "spi_data"))
     try:
-        while rclpy.ok(): 
-            rclpy.spin_once(node, timeout_sec=0.075) #time between ros2 spin calls; adjust
+        while True:
+            time.sleep(0.5)
             data, stamp = node.get_latest()
-            # if data is not None:
-            #     print("Latest:", data, "stamp_ns:", stamp)
-            #     break
+            if data is not None:
+                print("Latest:", data, "stamp_ns:", stamp)
+    except KeyboardInterrupt:
+        pass
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        node.close()
+        session.close()
 
 if __name__ == '__main__':
     main()

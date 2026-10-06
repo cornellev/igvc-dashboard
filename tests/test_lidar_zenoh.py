@@ -33,13 +33,17 @@ HAS_ZENOH = importlib.util.find_spec("zenoh") is not None
 
 
 def stub_missing_ros_modules():
-    """Let zenoh_client import outside the ROS container; the ROS classes are never used here."""
-    if importlib.util.find_spec("rclpy") is None:
+    """Let zenoh_client import outside the ROS container; the ROS classes are never used here.
+
+    Runs before every test, so skip modules already in sys.modules: find_spec()
+    raises ValueError on a stub installed by an earlier call (it has no __spec__).
+    """
+    if "rclpy" not in sys.modules and importlib.util.find_spec("rclpy") is None:
         for name in ("rclpy", "rclpy.executors", "rclpy.qos",
                      "sensor_msgs", "sensor_msgs.msg", "std_msgs", "std_msgs.msg"):
             sys.modules[name] = MagicMock()
         sys.modules["rclpy.node"] = types.SimpleNamespace(Node=object)
-    if importlib.util.find_spec("cv2") is None:
+    if "cv2" not in sys.modules and importlib.util.find_spec("cv2") is None:
         sys.modules["cv2"] = MagicMock()
 
 

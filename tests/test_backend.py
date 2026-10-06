@@ -20,6 +20,7 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 from state import DashboardState
 
@@ -127,8 +128,6 @@ class RosMappingTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(importlib.import_module("rclpy").ok())
 
     async def test_telemetry_reaches_broadcaster_with_original_envelope(self):
-        from std_msgs.msg import String
-
         received = asyncio.Queue()
 
         class Socket:
@@ -136,10 +135,8 @@ class RosMappingTests(unittest.IsolatedAsyncioTestCase):
                 received.put_nowait(payload)
 
         self.main.app.state.clients.add(Socket())
-        node = self.main.app.state.client.node
-        message = String()
-        message.data = json.dumps({"speed": 2.5, "missing": float("nan")})
-        node.listener_callback(message)
+        node = self.main.app.state.client.telemetry
+        node.handle_payload(json.dumps({"speed": 2.5, "missing": float("nan")}).encode())
 
         payload = await asyncio.wait_for(received.get(), timeout=3)
         self.assertEqual(set(payload), {"seq", "data", "stamp_ns"})
@@ -147,13 +144,12 @@ class RosMappingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["data"], {"speed": 2.5, "missing": None})
         self.assertGreater(payload["stamp_ns"], 0)
 
-        message.data = "invalid JSON"
-        node.listener_callback(message)
+        node.handle_payload(b"invalid JSON")
         self.assertIsNone(node.get_latest()[0])
 
     async def test_camera_callbacks_and_binary_routes(self):
         from fastapi import WebSocketDisconnect
-        from sensor_msgs.msg import Image
+        from mock_vehicle import encode_image_cdr
 
         class Socket:
             accepted = False
@@ -170,14 +166,10 @@ class RosMappingTests(unittest.IsolatedAsyncioTestCase):
                 self.frame = data
                 raise WebSocketDisconnect()
 
-        message = Image()
-        message.height = message.width = 2
-        message.encoding = "bgr8"
-        message.step = 6
-        message.data = bytes([0, 100, 200]) * 4
+        message = encode_image_cdr(2, 2, "bgr8", bytes([0, 100, 200]) * 4)
         for side in ("left", "right"):
             node = getattr(self.main.app.state.client, f"camera_{side}")
-            node._callback(message)
+            node.handle_payload(message)
             socket = Socket()
             await self.main.websocket_camera(socket, side)
             self.assertTrue(socket.accepted)
