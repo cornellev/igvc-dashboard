@@ -87,18 +87,14 @@ Live telemetry and analysis for the car: sensor streams (with filtering) and der
 <video src="frontend/public/LiveRED.mp4" loop muted autoplay></video>
 
 ---
+## System Overview
 
-## ROS Subscriber Data
+```
+Zenoh Sensors → Backend (Python + Zenoh) → WebSocket Stream → Frontend (React + TypeScript + Bun)
 
-For the ROS 2 subscriber over LAN, connect the laptop and Jetson to the same router
-network and set the Jetson's LAN IP in `.env`:
-
-```sh
-JETSON_LAN_IP=192.168.1.2
 ```
 
-Use `DISCOVERY_SERVER_IP` only if the Fast DDS discovery server is on a different
-LAN address than `JETSON_LAN_IP`.
+---
 
 ## Retained telemetry import adapters
 
@@ -135,15 +131,6 @@ but there is no active replay/upload page. The original replay demonstration
 below is historical, not a claim of current functionality.
 
 <video src="frontend/public/ReplayRED.mp4" loop muted autoplay></video>
-
----
-
-## System Overview
-
-```
-ROS2 Sensors → Backend (Python + ROS2) → WebSocket Stream → Frontend (React + TypeScript + Bun)
-
-```
 
 ---
 
@@ -347,3 +334,16 @@ export default defineConfig([
   },
 ]);
 ```
+## [ARCHIVED APPENDIX]
+
+## ROS Subscriber Data
+
+For the ROS 2 subscriber over LAN, connect the laptop and Jetson to the same router
+network and set the Jetson's LAN IP in `.env`:
+
+```sh
+JETSON_LAN_IP=192.168.1.2
+```
+
+Use `DISCOVERY_SERVER_IP` only if the Fast DDS discovery server is on a different
+LAN address than `JETSON_LAN_IP`.
