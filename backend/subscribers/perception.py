@@ -135,6 +135,7 @@ class LidarSubscriber:
     def __init__(self, session: zenoh.Session, key: str = "rslidar/points/segmented"):
         self._lock = threading.Lock()
         self._latest = None          # (stamp, points ndarray)
+        self._latest_raw = None      # the payload as published, for /ws/lidar/raw
         self._frame_count = 0
         self._sub = session.declare_subscriber(key, self._callback)
 
@@ -149,11 +150,17 @@ class LidarSubscriber:
         pts = pts[~np.isnan(pts[:, :3]).any(axis=1)]
         with self._lock:
             self._latest = (sec + nsec * 1e-9, pts)
+            self._latest_raw = b
             self._frame_count += 1
 
     def get_latest(self):
         with self._lock:
             return self._latest
+
+    def get_latest_raw(self) -> bytes | None:
+        """Latest valid payload, unmodified (NaN points included). A new bytes object per frame."""
+        with self._lock:
+            return self._latest_raw
 
     def close(self):
         self._sub.undeclare()
@@ -165,6 +172,7 @@ class CostmapSubscriber:
     def __init__(self, session: zenoh.Session, key: str = "rslidar/costmap"):
         self._lock = threading.Lock()
         self._latest = None          # (stamp, info dict, costs ndarray[size_y, size_x])
+        self._latest_raw = None      # the payload as published, for /ws/lidar/costmap
         self._frame_count = 0
         self._sub = session.declare_subscriber(key, self._callback)
 
@@ -179,11 +187,17 @@ class CostmapSubscriber:
         info = {"resolution": resolution, "origin_x": origin_x, "origin_y": origin_y}
         with self._lock:
             self._latest = (sec + nsec * 1e-9, info, costs)
+            self._latest_raw = b
             self._frame_count += 1
 
     def get_latest(self):
         with self._lock:
             return self._latest
+
+    def get_latest_raw(self) -> bytes | None:
+        """Latest valid payload, unmodified. A new bytes object per frame."""
+        with self._lock:
+            return self._latest_raw
 
     def close(self):
         self._sub.undeclare()

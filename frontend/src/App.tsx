@@ -6,8 +6,9 @@ import socket from "./data";
 import type { SocketData } from "./types";
 import Autonomy from "./panels/Autonomy";
 import Localization from "./panels/Localization";
-import Perception from "./panels/Perception";
+import Camera from "./panels/Camera";
 import { formatLatencySuffix } from "./Diagnostics";
+import Lidar from "./panels/Lidar";
 
 const darkTheme = createTheme({
   palette: {
@@ -131,6 +132,7 @@ export default function App() {
                     >
                       {autonomy.speed}
                     </DashboardCard>
+
                     <DashboardCard
                       className="min-h-42.5 lg:col-span-5 lg:row-start-1 lg:min-h-100"
                       title={`Run Summary${formatLatencySuffix(latest)}`}
@@ -140,29 +142,47 @@ export default function App() {
                     <DashboardCard className="min-h-200 lg:col-span-4 lg:row-start-1 lg:row-span-2 lg:min-h-100">
                       {localization.map}
                     </DashboardCard>
+
                     <DashboardCard
                       className="min-h-100 lg:col-span-4 lg:row-start-2 lg:min-h-55 2xl:col-span-5"
                       title="Power & Speed"
                     >
                       {localization.chart}
                     </DashboardCard>
+
                     <DashboardCard
                       className="min-h-100 lg:col-span-4 lg:row-start-2 lg:min-h-55 2xl:col-span-3"
                       title="Signals"
                     >
                       {autonomy.signals}
                     </DashboardCard>
+
                     <DashboardCard
                       className="min-h-60 lg:col-span-6 lg:min-h-72"
                       title="Camera (Left)"
                     >
-                      <Perception side="left" />
+                      <Camera side="left" />
                     </DashboardCard>
+
                     <DashboardCard
                       className="min-h-60 lg:col-span-6 lg:min-h-72"
                       title="Camera (Right)"
                     >
-                      <Perception side="right" />
+                      <Camera side="right" />
+                    </DashboardCard>
+
+                    <DashboardCard
+                      className="min-h-60 lg:col-span-6 lg:min-h-72"
+                      title="Lidar (Raw)"
+                    >
+                      <Lidar type="raw" />
+                    </DashboardCard>
+
+                    <DashboardCard
+                      className="min-h-60 lg:col-span-6 lg:min-h-72"
+                      title="Lidar (Costmap)"
+                    >
+                      <Lidar type="costmap" />
                     </DashboardCard>
                   </div>
                 )}

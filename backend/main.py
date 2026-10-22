@@ -11,6 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from state import DashboardState
 from zenoh_client import LegacyRosClient
 
+# Lidar/costmap frames arrive at ~10 Hz; poll faster so a new frame goes out promptly.
+LIDAR_POLL_HZ = 20
+
 def sanitize_json(x):
     if isinstance(x, float):
         if math.isnan(x) or math.isinf(x):
@@ -24,8 +27,10 @@ def sanitize_json(x):
         return [sanitize_json(v) for v in x]
     return x
 
-# broadcasts new messages to all clients without re-collecting ROS message per client
-# use a single producer to wait for next snapshot and then broadcast to all active sockets
+"""
+Broadcasts new messages to all clients without re-collecting ROS message per client.
+Uses a single producer to wait for next snapshot and then broadcast to all active sockets
+"""
 async def broadcaster(app: FastAPI):
     seq = 0
     last_stamp = None
@@ -69,7 +74,7 @@ async def lifespan(app: FastAPI):
     app.state.client = LegacyRosClient(app.state.dashboard)
     app.state.clients = set()
     app.state.client.start()
-    broadcaster_task = asyncio.create_task(broadcaster(app))
+    broadcaster_task = asyncio.create_task(broadcaster(app)) # This sends all data out to all clients
     try:
         yield
     finally:
@@ -171,6 +176,46 @@ async def websocket_camera(websocket: WebSocket, side: str):
             await asyncio.sleep(1 / 30)
     except WebSocketDisconnect:
         print(f"[CAM] websocket disconnected for {side}", flush=True)
+
+
+"""
+Send each new payload from get_latest_raw() once, unmodified, as a binary message.
+
+Frames are large, so unchanged frames are never resent. The browser decodes the same 
+wire format the Rust publisher writes (see encode_points / encode_costmap in 
+virtual-rgbd-sensor's rslidar_sdk_node.rs).
+"""
+async def stream_latest_bytes(websocket: WebSocket, name: str, get_latest_raw):
+    await websocket.accept()
+    print(f"[LIDAR] websocket connected for {name}", flush=True)
+    last_sent = None
+    warned_no_frame = False
+
+    try:
+        while True:
+            raw = get_latest_raw()
+            if raw is None:
+                if not warned_no_frame:
+                    print(f"[LIDAR] waiting for first {name} frame", flush=True)
+                    warned_no_frame = True
+            elif raw is not last_sent:   # each frame is a new bytes object
+                await websocket.send_bytes(raw)
+                last_sent = raw
+            await asyncio.sleep(1 / LIDAR_POLL_HZ)
+    except WebSocketDisconnect:
+        print(f"[LIDAR] websocket disconnected for {name}", flush=True)
+
+@app.websocket("/ws/lidar/raw")
+async def websocket_lidar_raw(websocket: WebSocket):
+    """Point cloud: 16-byte header (i32 sec, u32 nanosec, u32 width, u32 point_step),
+    then width records of x, y, z, intensity (f32) [+ cluster_id (i32) when point_step is 20]."""
+    await stream_latest_bytes(websocket, "points", app.state.client.lidar.get_latest_raw)
+
+@app.websocket("/ws/lidar/costmap")
+async def websocket_lidar_costmap(websocket: WebSocket):
+    """Costmap: 32-byte header (i32 sec, u32 nanosec, u32 size_x, u32 size_y, f32 resolution,
+    f32 origin_x, f32 origin_y, u32 reserved), then size_x * size_y row-major u8 costs."""
+    await stream_latest_bytes(websocket, "costmap", app.state.client.costmap.get_latest_raw)
 
 if __name__ == "__main__":
     import uvicorn

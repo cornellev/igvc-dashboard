@@ -18,6 +18,7 @@ import unittest
 import numpy as np
 
 from test_lidar_zenoh import ZenohSubscriberTestCase
+import zenoh_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from mock_vehicle import encode_image_cdr  # noqa: E402

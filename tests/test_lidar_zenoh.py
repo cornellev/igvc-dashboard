@@ -184,6 +184,83 @@ class CostmapSubscriberTests(ZenohSubscriberTestCase):
         self.assertIsNone(self.client.costmap.get_latest())
 
 
+class RecordingSocket:
+    """Stands in for a FastAPI WebSocket; disconnects after `limit` sends."""
+
+    def __init__(self, limit=1):
+        self.sent = []
+        self.limit = limit
+        self.accepted = False
+
+    async def accept(self):
+        self.accepted = True
+
+    async def send_bytes(self, data):
+        from fastapi import WebSocketDisconnect
+        self.sent.append(data)
+        if len(self.sent) >= self.limit:
+            raise WebSocketDisconnect()
+
+
+class LidarWebSocketTests(ZenohSubscriberTestCase):
+    """/ws/lidar/raw and /ws/lidar/costmap forward the published bytes unchanged."""
+
+    def setUp(self):
+        super().setUp()
+        import main
+        self.main = main
+        main.app.state.client = self.client   # the routes only use .lidar and .costmap
+
+    def run_route(self, route, socket, timeout):
+        import asyncio
+        try:
+            asyncio.run(asyncio.wait_for(route(socket), timeout))
+        except asyncio.TimeoutError:
+            pass
+
+    def test_lidar_route_sends_published_payload_unchanged(self):
+        payload = encode_points(5, 0, segmented_data([(1, 2, 3, 4, 7), (float("nan"), 0, 0, 0, -1)]), 20)
+        self.put_and_wait(self.client.lidar, self.lidar_key, payload)
+
+        socket = RecordingSocket()
+        self.run_route(self.main.websocket_lidar_raw, socket, timeout=2)
+        self.assertTrue(socket.accepted)
+        self.assertEqual(socket.sent, [payload])   # NaN points are left for the browser to skip
+
+    def test_costmap_route_sends_published_payload_unchanged(self):
+        payload = encode_costmap(5, 0, 3, 2, 0.05, -1.5, 2.25, [0, 128, 254, 255, 0, 253])
+        self.put_and_wait(self.client.costmap, self.costmap_key, payload)
+
+        socket = RecordingSocket()
+        self.run_route(self.main.websocket_lidar_costmap, socket, timeout=2)
+        self.assertEqual(socket.sent, [payload])
+
+    def test_unchanged_frame_is_not_resent(self):
+        payload = encode_costmap(1, 0, 2, 2, 0.1, 0.0, 0.0, [0, 1, 2, 3])
+        self.put_and_wait(self.client.costmap, self.costmap_key, payload)
+
+        socket = RecordingSocket(limit=99)
+        self.run_route(self.main.websocket_lidar_costmap, socket, timeout=0.5)   # ~10 polls
+        self.assertEqual(socket.sent, [payload])
+
+    def test_new_frames_are_sent_in_order(self):
+        first = encode_costmap(1, 0, 2, 2, 0.1, 0.0, 0.0, [0, 1, 2, 3])
+        second = encode_costmap(2, 0, 2, 2, 0.1, 0.0, 0.0, [3, 2, 1, 0])
+        self.put_and_wait(self.client.costmap, self.costmap_key, first)
+
+        import asyncio
+
+        async def scenario():
+            socket = RecordingSocket(limit=2)
+            route = asyncio.create_task(self.main.websocket_lidar_costmap(socket))
+            await asyncio.sleep(0.2)
+            await asyncio.to_thread(self.put_and_wait, self.client.costmap, self.costmap_key, second)
+            await asyncio.wait_for(route, 2)
+            return socket.sent
+
+        self.assertEqual(asyncio.run(scenario()), [first, second])
+
+
 def live(seconds):
     stub_missing_ros_modules()
     import zenoh_client
