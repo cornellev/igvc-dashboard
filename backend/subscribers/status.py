@@ -1,4 +1,4 @@
-"""Zenoh spi_data subscriber; FSM and health inputs are not defined yet.
+"""Zenoh spi_data sensor data subscriber; FSM and health inputs are not defined yet.
 Contains all the Telemetry Data from sensors (previously old subscriber from old RED)"""
 
 import json

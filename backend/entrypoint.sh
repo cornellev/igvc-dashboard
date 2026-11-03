@@ -22,4 +22,5 @@ else
 	fi
 fi
 
-exec uvicorn main:app --host 0.0.0.0 --port 8000
+# Open SSE streams never finish on their own; without a timeout, shutdown waits on them forever.
+exec uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 2

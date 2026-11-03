@@ -187,14 +187,20 @@ from `backend/` in an environment with ROS 2 Humble installed:
 ```bash
 pip install -r requirements.txt
 source /opt/ros/humble/setup.bash
-uvicorn main:app --host 0.0.0.0 --port 8000
+uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 2
 ```
+
+The timeout matters: browsers keep `/stream` open indefinitely, so without it
+Ctrl+C waits until every dashboard tab is closed.
 
 The relocated standalone subscriber examples should be run as modules from
 `backend/`, for example `python -m subscribers.localization`.
 
-The API keeps `GET /`, `GET /healthz`, `WS /ws/stream`, and
-`WS /ws/camera/{left|right}`. Control routes remain `POST /bag/start`,
+The API keeps `GET /` and `GET /healthz`. Live data streams are
+`GET /stream` (telemetry, Server-Sent Events) and `GET /camera/{left|right}`
+(MJPEG video; open it in a browser tab to view a feed directly). The older
+`WS /ws/stream` and `WS /ws/camera/{left|right}` routes remain until the
+WebSocket removal. Control routes remain `POST /bag/start`,
 `POST /bag/stop`, `GET /bag/status`, `POST /autonomy/start`,
 `POST /autonomy/stop`, `GET /autonomy/status`, and `GET /control/status`.
 Control status describes the requested state, not confirmation from the vehicle.

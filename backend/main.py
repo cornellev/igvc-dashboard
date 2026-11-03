@@ -5,14 +5,23 @@ import contextlib
 from contextlib import asynccontextmanager
 import math
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
+from fastapi.sse import EventSourceResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from state import DashboardState
-from zenoh_client import LegacyRosClient
+from zenoh_client import ZenohClient
 
 # Lidar/costmap frames arrive at ~10 Hz; poll faster so a new frame goes out promptly.
 LIDAR_POLL_HZ = 20
+
+# Cameras publish at up to ~30 fps; check for a new frame at that rate.
+CAMERA_POLL_HZ = 30
+MJPEG_BOUNDARY = "frame"
+
+# Payloads buffered per SSE client; a client that falls behind loses its oldest ones.
+SSE_QUEUE_SIZE = 10
 
 def sanitize_json(x):
     if isinstance(x, float):
@@ -30,6 +39,7 @@ def sanitize_json(x):
 """
 Broadcasts new messages to all clients without re-collecting ROS message per client.
 Uses a single producer to wait for next snapshot and then broadcast to all active sockets
+and SSE client queues
 """
 async def broadcaster(app: FastAPI):
     seq = 0
@@ -68,11 +78,17 @@ async def broadcaster(app: FastAPI):
         for ws in dead:
             app.state.clients.discard(ws)
 
+        for queue in list(app.state.sse_clients):
+            if queue.full():
+                queue.get_nowait()   # slow client: drop its oldest payload
+            queue.put_nowait(payload)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.dashboard = DashboardState()
-    app.state.client = LegacyRosClient(app.state.dashboard)
+    app.state.client = ZenohClient(state=app.state.dashboard)
     app.state.clients = set()
+    app.state.sse_clients = set()
     app.state.client.start()
     broadcaster_task = asyncio.create_task(broadcaster(app)) # This sends all data out to all clients
     try:
@@ -138,6 +154,17 @@ async def healthz():
         "controls": app.state.client.controls.get_status(),
     }
 
+@app.get("/stream", response_class=EventSourceResponse)
+async def sse_stream():
+    """ Replacement for /ws/stream """
+    queue = asyncio.Queue(maxsize=SSE_QUEUE_SIZE)
+    app.state.sse_clients.add(queue)
+    try:
+        while True:
+            yield await queue.get()
+    finally:
+        app.state.sse_clients.discard(queue)
+
 @app.websocket("/ws/stream")
 async def websocket_stream(websocket: WebSocket):
     await websocket.accept()
@@ -151,6 +178,46 @@ async def websocket_stream(websocket: WebSocket):
         pass
     finally:
         app.state.clients.discard(websocket)
+
+"""
+Yield each new JPEG from get_latest_jpeg() once, as one part of a multipart/x-mixed-replace
+(MJPEG) body. Browsers show that body in a plain <img> and swap in each part as it arrives.
+"""
+async def mjpeg_frames(get_latest_jpeg, side: str):
+    print(f"[CAM] mjpeg client connected for {side}", flush=True)
+    last_sent = None
+    warned_no_frame = False
+
+    try:
+        while True:
+            jpeg = get_latest_jpeg()
+            if jpeg is None:
+                if not warned_no_frame:
+                    print(f"[CAM] waiting for first {side} frame", flush=True)
+                    warned_no_frame = True
+            elif jpeg is not last_sent:   # each frame is a new bytes object
+                yield (
+                    f"--{MJPEG_BOUNDARY}\r\n"
+                    f"Content-Type: image/jpeg\r\n"
+                    f"Content-Length: {len(jpeg)}\r\n\r\n"
+                ).encode() + jpeg + b"\r\n"
+                last_sent = jpeg
+            await asyncio.sleep(1 / CAMERA_POLL_HZ)
+    finally:
+        print(f"[CAM] mjpeg client disconnected for {side}", flush=True)
+
+@app.get("/camera/{side}")
+async def camera_stream(side: str):
+    """Camera video as MJPEG, viewable directly in a browser tab or <img>."""
+    if side not in ("left", "right"):
+        raise HTTPException(status_code=404, detail=f"unknown camera side: {side}")
+    client = app.state.client
+    node = client.camera_left if side == "left" else client.camera_right
+    return StreamingResponse(
+        mjpeg_frames(node.get_latest_jpeg, side),
+        media_type=f"multipart/x-mixed-replace; boundary={MJPEG_BOUNDARY}",
+        headers={"Cache-Control": "no-store"},
+    )
 
 @app.websocket("/ws/camera/{side}")
 async def websocket_camera(websocket: WebSocket, side: str):
@@ -219,4 +286,5 @@ async def websocket_lidar_costmap(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Open SSE streams never finish on their own; without a timeout, shutdown waits on them forever.
+    uvicorn.run(app, host="0.0.0.0", port=8000, timeout_graceful_shutdown=2)

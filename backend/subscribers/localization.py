@@ -1,4 +1,4 @@
-"""Standalone ROS IMU/GNSS prototype, retained without enabling it at startup."""
+"""ROS IMU/GNSS prototype, retained without enabling it at startup."""
 
 import rclpy
 from rclpy.node import Node

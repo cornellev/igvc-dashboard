@@ -22,6 +22,27 @@ export const getWebSocketUrl = (path: string) => {
   return `${baseUrl}${normalizedPath}`;
 };
 
+const getDefaultHttpBase = () => {
+  if (typeof window === "undefined") {
+    return "http://127.0.0.1:8000";
+  }
+
+  return `${window.location.protocol}//${window.location.hostname}:8000`;
+};
+
+export const getHttpUrl = (path: string) => {
+  // An existing VITE_BACKEND_WS_URL still works: ws:// becomes http://, wss:// becomes https://.
+  const configuredBase =
+    import.meta.env.VITE_BACKEND_URL?.trim() ||
+    import.meta.env.VITE_BACKEND_WS_URL?.trim().replace(/^ws/, "http");
+  const baseUrl = configuredBase
+    ? trimTrailingSlash(configuredBase)
+    : getDefaultHttpBase();
+
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${baseUrl}${normalizedPath}`;
+};
+
 type MessageHandler = (data: SocketData) => void;
 
 type LooseRecord = Record<string, unknown>;
@@ -154,8 +175,8 @@ export const normalizeSocketData = (
 
 class SocketService {
   private static instance: SocketService;
-  private socket: WebSocket | null = null;
-  private url: string = getWebSocketUrl("/ws/stream");
+  private source: EventSource | null = null;
+  private url: string = getHttpUrl("/stream");
   private handlers: Set<MessageHandler> = new Set();
   private reconnectInterval: number = 5000;
   private data: SocketData[] = [];
@@ -172,15 +193,17 @@ class SocketService {
   }
 
   public connect(): void {
-    if (this.socket?.readyState === WebSocket.OPEN) return;
+    // EventSource reconnects on its own, so one per service is enough.
+    if (this.source) return;
 
-    this.socket = new WebSocket(this.url);
+    const source = new EventSource(this.url);
+    this.source = source;
 
-    this.socket.onopen = () => {
-      console.log("WebSocket Connected");
+    source.onopen = () => {
+      console.log("Telemetry stream connected");
     };
 
-    this.socket.onmessage = (event: MessageEvent) => {
+    source.onmessage = (event: MessageEvent<string>) => {
       const recvMs = Date.now();
       const envelope = JSON.parse(event.data);
       const data = normalizeSocketData(
@@ -193,14 +216,17 @@ class SocketService {
       this.resetDataTimeout();
     };
 
-    this.socket.onclose = () => {
-      console.log("WebSocket Disconnected. Reconnecting...");
+    source.onerror = () => {
+      // A dropped connection is retried by the browser (readyState CONNECTING).
+      // It gives up (CLOSED) on a failed response, e.g. the backend replying
+      // with an error while it starts, so retry those ourselves.
+      if (source.readyState !== EventSource.CLOSED) {
+        console.warn("Telemetry stream lost. Reconnecting...");
+        return;
+      }
+      console.error("Telemetry stream closed. Retrying...");
+      if (this.source === source) this.source = null;
       setTimeout(() => this.connect(), this.reconnectInterval);
-    };
-
-    this.socket.onerror = (error) => {
-      console.error("WebSocket Error:", error);
-      this.socket?.close();
     };
   }
 
@@ -230,16 +256,9 @@ class SocketService {
     return this.data.length > 0 ? this.data[this.data.length - 1] : null;
   }
 
-  public send(data: unknown): void {
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify(data));
-    } else {
-      console.error("Socket not connected");
-    }
-  }
-
   public disconnect(): void {
-    this.socket?.close();
+    this.source?.close();
+    this.source = null;
   }
 }
 
