@@ -132,7 +132,7 @@ class CameraSubscriber:
 
 
 class LidarSubscriber:
-    def __init__(self, session: zenoh.Session, key: str = "rslidar/points/segmented"):
+    def __init__(self, session: zenoh.Session, key: str = "cev/sensors/lidar/segmented_points"):
         self._lock = threading.Lock()
         self._latest = None          # (stamp, points ndarray)
         self._latest_raw = None      # the payload as published, for /ws/lidar/raw

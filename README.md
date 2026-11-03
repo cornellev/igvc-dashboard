@@ -6,7 +6,9 @@ Adi, Julia
 
 ---
 
-![Live Dashboard Image](frontend/public/LiveRED.png)
+**Planned UI** — target layout; not the current build.
+
+![Planned autonomy dashboard](frontend/public/planned-autonomy-dashboard.png)
 
 ---
 
@@ -229,6 +231,24 @@ These tests cover state extraction, telemetry broadcast envelopes, camera JPEGs,
 control responses, the standalone localization prototype, startup cleanup, and
 the actual container entrypoint serving images from the relocated mock publisher.
 They use localhost-only ROS in a separate domain and do not connect to the vehicle.
+
+## Testing
+
+Dummy publishers run outside the backend and publish on the real Zenoh keys. The backend always subscribes to those keys and has no dummy mode. Run only one publisher on a given key.
+
+From the repository root:
+
+```bash
+python3 tools/dummy/run.py
+```
+
+The process listens on `tcp/0.0.0.0:7449` (`DUMMY_ZENOH_LISTEN`). Each registered topic is published at its own rate. Today that is `segmented_points` on `cev/sensors/lidar/segmented_points` at 10 Hz. The key follows `LIDAR_ZENOH_KEY` when that variable is set.
+
+`DUMMY_TOPICS` is a comma-separated list of topic names. Leave it unset to publish every registered topic. A name left off the list is not published, which leaves that key free for the real publisher. An unknown name exits. Do not run the real publisher for a key that is also on this list; the subscriber will interleave both streams.
+
+To use the real segmented-points publisher, leave `run.py` stopped, or omit `segmented_points` from `DUMMY_TOPICS`, and start the real publisher. The backend subscriber stays the same.
+
+Docker is not required to start the dummy publisher. `docker-compose.dev.yml` uses `zenoh-dev.json5`, which dials port 7449 so a backend inside Docker can receive it. A backend running on the host finds the dummy through Zenoh discovery. Port 7447 remains the real lidar publisher and 7448 remains the camera mock. With the dummy process stopped, the backend keeps retrying 7449 and otherwise behaves as before.
 
 ## Frontend development reference
 
