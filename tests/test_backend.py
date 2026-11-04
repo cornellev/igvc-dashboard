@@ -9,6 +9,7 @@ import importlib
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -67,11 +68,15 @@ RUN_ROS = os.environ.get("DASHBOARD_TEST_ROS") == "1"
 @unittest.skipUnless(RUN_ROS, "set DASHBOARD_TEST_ROS=1 inside the ROS container")
 class EntrypointTests(unittest.TestCase):
     def test_container_entrypoint_serves_relocated_mock_camera(self):
-        from websockets.asyncio.client import connect
-
-        async def read_camera():
-            async with connect("ws://127.0.0.1:8000/ws/camera/left") as socket:
-                return await asyncio.wait_for(socket.recv(), timeout=10)
+        def read_camera():
+            """First JPEG from the MJPEG stream: read one part's headers, then its body."""
+            with urlopen("http://127.0.0.1:8000/camera/left", timeout=10) as response:
+                self.assertTrue(response.headers["Content-Type"].startswith("multipart/x-mixed-replace"))
+                headers = b""
+                while not headers.endswith(b"\r\n\r\n"):
+                    headers += response.read(1)
+                length = int(re.search(rb"Content-Length: (\d+)", headers).group(1))
+                return response.read(length)
 
         environment = {
             **os.environ,
@@ -100,7 +105,7 @@ class EntrypointTests(unittest.TestCase):
                     logs.seek(0)
                     self.fail(logs.read().decode(errors="replace"))
 
-                jpeg = asyncio.run(read_camera())
+                jpeg = read_camera()
                 self.assertTrue(jpeg.startswith(b"\xff\xd8"))
                 self.assertTrue(jpeg.endswith(b"\xff\xd9"))
             finally:
@@ -147,39 +152,24 @@ class RosMappingTests(unittest.IsolatedAsyncioTestCase):
         node.handle_payload(b"invalid JSON")
         self.assertIsNone(node.get_latest()[0])
 
-    async def test_camera_callbacks_and_binary_routes(self):
-        from fastapi import WebSocketDisconnect
+    async def test_camera_callbacks_and_mjpeg_route(self):
+        from fastapi import HTTPException
         from mock_vehicle import encode_image_cdr
-
-        class Socket:
-            accepted = False
-            closed_code = None
-            frame = None
-
-            async def accept(self):
-                self.accepted = True
-
-            async def close(self, code):
-                self.closed_code = code
-
-            async def send_bytes(self, data):
-                self.frame = data
-                raise WebSocketDisconnect()
 
         message = encode_image_cdr(2, 2, "bgr8", bytes([0, 100, 200]) * 4)
         for side in ("left", "right"):
             node = getattr(self.main.app.state.client, f"camera_{side}")
             node.handle_payload(message)
-            socket = Socket()
-            await self.main.websocket_camera(socket, side)
-            self.assertTrue(socket.accepted)
-            self.assertTrue(socket.frame.startswith(b"\xff\xd8"))
-            self.assertTrue(socket.frame.endswith(b"\xff\xd9"))
+            response = await self.main.camera_stream(side)
+            part = await asyncio.wait_for(anext(response.body_iterator), timeout=3)
+            await response.body_iterator.aclose()
+            jpeg = part.split(b"\r\n\r\n", 1)[1].removesuffix(b"\r\n")
+            self.assertTrue(jpeg.startswith(b"\xff\xd8"))
+            self.assertTrue(jpeg.endswith(b"\xff\xd9"))
 
-        socket = Socket()
-        await self.main.websocket_camera(socket, "unknown")
-        self.assertEqual(socket.closed_code, 1008)
-        self.assertFalse(socket.accepted)
+        with self.assertRaises(HTTPException) as caught:
+            await self.main.camera_stream("unknown")
+        self.assertEqual(caught.exception.status_code, 404)
 
     async def test_control_routes_keep_existing_status_contract(self):
         self.assertEqual((await self.main.autonomy_start())["value"], 1)

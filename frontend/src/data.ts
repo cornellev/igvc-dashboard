@@ -3,25 +3,6 @@ import type { SocketData } from "./types";
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 
-const getDefaultWebSocketBase = () => {
-  if (typeof window === "undefined") {
-    return "ws://127.0.0.1:8000";
-  }
-
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.hostname}:8000`;
-};
-
-export const getWebSocketUrl = (path: string) => {
-  const configuredBase = import.meta.env.VITE_BACKEND_WS_URL?.trim();
-  const baseUrl = configuredBase
-    ? trimTrailingSlash(configuredBase)
-    : getDefaultWebSocketBase();
-
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${baseUrl}${normalizedPath}`;
-};
-
 const getDefaultHttpBase = () => {
   if (typeof window === "undefined") {
     return "http://127.0.0.1:8000";
@@ -30,11 +11,9 @@ const getDefaultHttpBase = () => {
   return `${window.location.protocol}//${window.location.hostname}:8000`;
 };
 
+/** Backend URL for a path: VITE_BACKEND_URL if set, else port 8000 on the page's host. */
 export const getHttpUrl = (path: string) => {
-  // An existing VITE_BACKEND_WS_URL still works: ws:// becomes http://, wss:// becomes https://.
-  const configuredBase =
-    import.meta.env.VITE_BACKEND_URL?.trim() ||
-    import.meta.env.VITE_BACKEND_WS_URL?.trim().replace(/^ws/, "http");
+  const configuredBase = import.meta.env.VITE_BACKEND_URL?.trim();
   const baseUrl = configuredBase
     ? trimTrailingSlash(configuredBase)
     : getDefaultHttpBase();
@@ -173,8 +152,8 @@ export const normalizeSocketData = (
   };
 };
 
-class SocketService {
-  private static instance: SocketService;
+class TelemetryStream {
+  private static instance: TelemetryStream;
   private source: EventSource | null = null;
   private url: string = getHttpUrl("/stream");
   private handlers: Set<MessageHandler> = new Set();
@@ -185,11 +164,11 @@ class SocketService {
 
   private constructor() {}
 
-  public static getInstance(): SocketService {
-    if (!SocketService.instance) {
-      SocketService.instance = new SocketService();
+  public static getInstance(): TelemetryStream {
+    if (!TelemetryStream.instance) {
+      TelemetryStream.instance = new TelemetryStream();
     }
-    return SocketService.instance;
+    return TelemetryStream.instance;
   }
 
   public connect(): void {
@@ -234,10 +213,10 @@ class SocketService {
     if (this.dataTimeoutHandle) clearTimeout(this.dataTimeoutHandle);
     this.dataTimeoutHandle = setTimeout(() => {
       console.warn(
-        `[ROS] Error: no data received for >${this.DATA_TIMEOUT_MS / 1000}s. possible reasons:` +
-          `\n- ros publisher is not publishing` +
-          `\n- laptop and publisher are not on the same LAN` +
-          `\n- you are not using the correct Fast DDS discovery server LAN IP address`,
+        `[Telemetry] Error: no data received for >${this.DATA_TIMEOUT_MS / 1000}s. possible reasons:` +
+          `\n- the vehicle is not publishing telemetry on Zenoh` +
+          `\n- laptop and vehicle are not on the same LAN` +
+          `\n- the backend's Zenoh config (ZENOH_CONFIG) does not reach the vehicle`,
       );
     }, this.DATA_TIMEOUT_MS);
   }
@@ -361,9 +340,9 @@ class PerceptionStream {
 
 export const perceptionStream = new PerceptionStream();
 
-const socketService = SocketService.getInstance();
+const telemetryStream = TelemetryStream.getInstance();
 
-export default socketService;
+export default telemetryStream;
 
 /** Optional telemetry guard retained from the old run-tracking controls. */
 export function canStartRunTracking(
@@ -379,14 +358,11 @@ export function canStartRunTracking(
   return true;
 }
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
-
 export async function postControlRequest(
   path: string,
   fallbackMessage: string,
 ) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(getHttpUrl(path), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   });

@@ -1,4 +1,4 @@
-"""Checks for the Server-Sent Events routes that replace the WebSocket ones.
+"""Checks for the streaming routes: /stream and /perception (SSE) and /camera/{side} (MJPEG).
 
 The broadcaster runs against a bare DashboardState, so no ROS or Zenoh traffic
 is needed; ROS is stubbed out when it isn't installed:
@@ -18,7 +18,7 @@ from test_lidar_zenoh import stub_missing_ros_modules
 
 
 class TelemetryStreamTests(unittest.IsolatedAsyncioTestCase):
-    """/stream yields the same envelope the broadcaster sends to /ws/stream."""
+    """/stream yields each broadcaster payload as the {seq, data, stamp_ns} envelope."""
 
     async def asyncSetUp(self):
         stub_missing_ros_modules()

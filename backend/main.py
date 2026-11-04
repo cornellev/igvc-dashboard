@@ -6,7 +6,7 @@ import contextlib
 from contextlib import asynccontextmanager
 import math
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,8 +39,7 @@ def sanitize_json(x):
 
 """
 Broadcasts new messages to all clients without re-collecting ROS message per client.
-Uses a single producer to wait for next snapshot and then broadcast to all active sockets
-and SSE client queues
+Uses a single producer to wait for next snapshot and then put it on every SSE client queue
 """
 async def broadcaster(app: FastAPI):
     seq = 0
@@ -65,20 +64,6 @@ async def broadcaster(app: FastAPI):
         payload = sanitize_json(payload)
         seq += 1
 
-        dead = []
-        for ws in list(app.state.clients):
-            try:
-                # print(payload)
-                await ws.send_json(payload)
-            except WebSocketDisconnect:
-                dead.append(ws)
-            # treat all send failures as dead (optional)
-            except Exception:
-                dead.append(ws)
-            
-        for ws in dead:
-            app.state.clients.discard(ws)
-
         for queue in list(app.state.sse_clients):
             if queue.full():
                 queue.get_nowait()   # slow client: drop its oldest payload
@@ -88,7 +73,6 @@ async def broadcaster(app: FastAPI):
 async def lifespan(app: FastAPI):
     app.state.dashboard = DashboardState()
     app.state.client = ZenohClient(state=app.state.dashboard)
-    app.state.clients = set()
     app.state.sse_clients = set()
     app.state.client.start()
     broadcaster_task = asyncio.create_task(broadcaster(app)) # This sends all data out to all clients
@@ -157,7 +141,7 @@ async def healthz():
 
 @app.get("/stream", response_class=EventSourceResponse)
 async def sse_stream():
-    """ Replacement for /ws/stream """
+    """Telemetry as Server-Sent Events: one {seq, data, stamp_ns} payload per new snapshot."""
     queue = asyncio.Queue(maxsize=SSE_QUEUE_SIZE)
     app.state.sse_clients.add(queue)
     try:
@@ -165,20 +149,6 @@ async def sse_stream():
             yield await queue.get()
     finally:
         app.state.sse_clients.discard(queue)
-
-@app.websocket("/ws/stream")
-async def websocket_stream(websocket: WebSocket):
-    await websocket.accept()
-    app.state.clients.add(websocket)
-
-    try:
-        # keep socket alive; data is pushed from broadcaster
-        while True:
-            await asyncio.sleep(60)
-    except WebSocketDisconnect:
-        pass
-    finally:
-        app.state.clients.discard(websocket)
 
 """
 Yield each new JPEG from get_latest_jpeg() once, as one part of a multipart/x-mixed-replace
@@ -220,38 +190,18 @@ async def camera_stream(side: str):
         headers={"Cache-Control": "no-store"},
     )
 
-@app.websocket("/ws/camera/{side}")
-async def websocket_camera(websocket: WebSocket, side: str):
-    if side not in ("left", "right"):
-        await websocket.close(code=1008)
-        return
-
-    await websocket.accept()
-    print(f"[CAM] websocket connected for {side}", flush=True)
-    client = app.state.client
-    node = client.camera_left if side == "left" else client.camera_right
-    warned_no_frame = False
-
-    try:
-        while True:
-            jpeg = node.get_latest_jpeg()
-            if jpeg is not None:
-                warned_no_frame = False
-                await websocket.send_bytes(jpeg)
-            elif not warned_no_frame:
-                print(f"[CAM] waiting for first {side} frame", flush=True)
-                warned_no_frame = True
-            await asyncio.sleep(1 / 30)
-    except WebSocketDisconnect:
-        print(f"[CAM] websocket disconnected for {side}", flush=True)
-
-
 @app.get("/perception", response_class=EventSourceResponse)
 async def perception_stream():
     """Perception frames as Server-Sent Events, one named event per source, so new
-    sources share this one connection. Each event's data is the payload as published,
-    base64-encoded (SSE carries text only), in the same format as /ws/lidar/{raw,costmap}:
-    see websocket_lidar_raw and websocket_lidar_costmap."""
+    sources share this one connection. Each event's data is the payload as published
+    (see encode_points / encode_costmap in virtual-rgbd-sensor's rslidar_sdk_node.rs),
+    base64-encoded since SSE carries text only. Unchanged frames are never resent.
+
+    raw: 16-byte header (i32 sec, u32 nanosec, u32 width, u32 point_step), then width
+        records of x, y, z, intensity (f32) [+ cluster_id (i32) when point_step is 20].
+    costmap: 32-byte header (i32 sec, u32 nanosec, u32 size_x, u32 size_y, f32 resolution,
+        f32 origin_x, f32 origin_y, u32 reserved), then size_x * size_y row-major u8 costs.
+    """
     client = app.state.client
     sources = {
         "raw": client.lidar.get_latest_raw,
@@ -270,45 +220,6 @@ async def perception_stream():
             await asyncio.sleep(1 / LIDAR_POLL_HZ)
     finally:
         print("[PERCEPTION] sse client disconnected", flush=True)
-
-"""
-Send each new payload from get_latest_raw() once, unmodified, as a binary message.
-
-Frames are large, so unchanged frames are never resent. The browser decodes the same 
-wire format the Rust publisher writes (see encode_points / encode_costmap in 
-virtual-rgbd-sensor's rslidar_sdk_node.rs).
-"""
-async def stream_latest_bytes(websocket: WebSocket, name: str, get_latest_raw):
-    await websocket.accept()
-    print(f"[LIDAR] websocket connected for {name}", flush=True)
-    last_sent = None
-    warned_no_frame = False
-
-    try:
-        while True:
-            raw = get_latest_raw()
-            if raw is None:
-                if not warned_no_frame:
-                    print(f"[LIDAR] waiting for first {name} frame", flush=True)
-                    warned_no_frame = True
-            elif raw is not last_sent:   # each frame is a new bytes object
-                await websocket.send_bytes(raw)
-                last_sent = raw
-            await asyncio.sleep(1 / LIDAR_POLL_HZ)
-    except WebSocketDisconnect:
-        print(f"[LIDAR] websocket disconnected for {name}", flush=True)
-
-@app.websocket("/ws/lidar/raw")
-async def websocket_lidar_raw(websocket: WebSocket):
-    """Point cloud: 16-byte header (i32 sec, u32 nanosec, u32 width, u32 point_step),
-    then width records of x, y, z, intensity (f32) [+ cluster_id (i32) when point_step is 20]."""
-    await stream_latest_bytes(websocket, "points", app.state.client.lidar.get_latest_raw)
-
-@app.websocket("/ws/lidar/costmap")
-async def websocket_lidar_costmap(websocket: WebSocket):
-    """Costmap: 32-byte header (i32 sec, u32 nanosec, u32 size_x, u32 size_y, f32 resolution,
-    f32 origin_x, f32 origin_y, u32 reserved), then size_x * size_y row-major u8 costs."""
-    await stream_latest_bytes(websocket, "costmap", app.state.client.costmap.get_latest_raw)
 
 if __name__ == "__main__":
     import uvicorn
