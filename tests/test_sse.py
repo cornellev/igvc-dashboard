@@ -116,5 +116,60 @@ class CameraStreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.status_code, 404)
 
 
+class PerceptionStreamTests(unittest.IsolatedAsyncioTestCase):
+    """/perception sends each new lidar/costmap frame once, base64-encoded, as a named event."""
+
+    async def asyncSetUp(self):
+        stub_missing_ros_modules()
+        import main
+        from test_lidar_zenoh import encode_costmap, encode_points, segmented_data
+
+        self.main = main
+
+        class Source:
+            raw = None
+
+            def get_latest_raw(self):
+                return self.raw
+
+        class Client:
+            lidar = Source()
+            costmap = Source()
+
+        main.app.state.client = Client()
+        self.client = Client
+        self.points = encode_points(1, 2, segmented_data([(0.5, -0.5, 1.5, 42.0, 3)]), 20)
+        self.costmap = encode_costmap(1, 2, 2, 1, 0.05, -25.0, -25.0, bytes([0, 254]))
+
+    async def test_frames_are_named_base64_events_sent_once(self):
+        import base64
+
+        stream = self.main.perception_stream()
+        self.client.lidar.raw = self.points
+        self.client.costmap.raw = self.costmap
+
+        first = await asyncio.wait_for(anext(stream), timeout=3)
+        second = await asyncio.wait_for(anext(stream), timeout=3)
+        self.assertEqual((first.event, second.event), ("raw", "costmap"))
+        self.assertEqual(base64.b64decode(first.raw_data), self.points)
+        self.assertEqual(base64.b64decode(second.raw_data), self.costmap)
+
+        # Unchanged frames are not resent; a new costmap goes out on its own.
+        following = asyncio.create_task(anext(stream))
+        await asyncio.sleep(0.15)
+        self.assertFalse(following.done())
+        self.client.costmap.raw = bytes(self.costmap)[:-1] + b"\x00"
+        event = await asyncio.wait_for(following, timeout=3)
+        self.assertEqual(event.event, "costmap")
+        await stream.aclose()
+
+    async def test_sources_without_frames_send_nothing(self):
+        stream = self.main.perception_stream()
+        self.client.costmap.raw = self.costmap
+        event = await asyncio.wait_for(anext(stream), timeout=3)
+        self.assertEqual(event.event, "costmap")
+        await stream.aclose()
+
+
 if __name__ == "__main__":
     unittest.main()

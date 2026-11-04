@@ -17,7 +17,7 @@ from subscribers.status import DataSubscriber
 SAMPLE_RATE_HZ = 40
 TELEMETRY_KEY = os.getenv("TELEMETRY_ZENOH_KEY", "spi_data")
 LIDAR_KEY = os.getenv("LIDAR_ZENOH_KEY", "cev/sensors/lidar/segmented_points")
-COSTMAP_KEY = os.getenv("COSTMAP_ZENOH_KEY", "rslidar/costmap")
+COSTMAP_KEY = os.getenv("COSTMAP_ZENOH_KEY", "cev/mapping/costmap")
 CAMERA_LEFT_KEY = os.getenv("CAMERA_LEFT_ZENOH_KEY", "zed/left/image_raw")
 CAMERA_RIGHT_KEY = os.getenv("CAMERA_RIGHT_ZENOH_KEY", "zed/right/image_raw")
 CONTROL_NAMESPACE = os.getenv("DASHBOARD_CONTROL_TOPIC", "dashboard_control")

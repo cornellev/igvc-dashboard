@@ -1,13 +1,14 @@
 """Existing browser API, reorganized around extracted state and ROS filler."""
 
 import asyncio
+import base64
 import contextlib
 from contextlib import asynccontextmanager
 import math
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
-from fastapi.sse import EventSourceResponse
+from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.middleware.cors import CORSMiddleware
 
 from state import DashboardState
@@ -244,6 +245,31 @@ async def websocket_camera(websocket: WebSocket, side: str):
     except WebSocketDisconnect:
         print(f"[CAM] websocket disconnected for {side}", flush=True)
 
+
+@app.get("/perception", response_class=EventSourceResponse)
+async def perception_stream():
+    """Perception frames as Server-Sent Events, one named event per source, so new
+    sources share this one connection. Each event's data is the payload as published,
+    base64-encoded (SSE carries text only), in the same format as /ws/lidar/{raw,costmap}:
+    see websocket_lidar_raw and websocket_lidar_costmap."""
+    client = app.state.client
+    sources = {
+        "raw": client.lidar.get_latest_raw,
+        "costmap": client.costmap.get_latest_raw,
+    }
+    last_sent = dict.fromkeys(sources)
+    print("[PERCEPTION] sse client connected", flush=True)
+
+    try:
+        while True:
+            for event, get_latest_raw in sources.items():
+                raw = get_latest_raw()
+                if raw is not None and raw is not last_sent[event]:   # each frame is a new bytes object
+                    yield ServerSentEvent(event=event, raw_data=base64.b64encode(raw).decode("ascii"))
+                    last_sent[event] = raw
+            await asyncio.sleep(1 / LIDAR_POLL_HZ)
+    finally:
+        print("[PERCEPTION] sse client disconnected", flush=True)
 
 """
 Send each new payload from get_latest_raw() once, unmodified, as a binary message.

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
-import { getWebSocketUrl } from "../data";
+import { perceptionStream, type PerceptionEvent } from "../data";
 import {
   decodeCostmap,
   decodePointCloud,
@@ -10,8 +10,8 @@ import {
   type PointCloudFrame,
 } from "../lidarFormat";
 
-/** Which backend stream to show: `raw` = /ws/lidar/raw (point cloud), `costmap` = /ws/lidar/costmap. */
-export type LidarType = "raw" | "costmap";
+/** Which /perception event to show: `raw` = point cloud, `costmap` = costmap. */
+export type LidarType = Extract<PerceptionEvent, "raw" | "costmap">;
 
 // ---------------------------------------------------------------------------
 // Colors
@@ -132,44 +132,26 @@ export function Lidar({
   const points = usePointCloudObject();
   const costmap = useCostmapObject();
 
-  useEffect(() => {
-    let cancelled = false;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let ws: WebSocket | null = null;
-
-    const connect = () => {
-      if (cancelled) return;
-      ws = new WebSocket(getWebSocketUrl(`/ws/lidar/${type}`));
-      ws.binaryType = "arraybuffer"; // we read the bytes ourselves (the camera uses "blob" for <img>)
-
-      ws.onclose = () => {
-        setHasFrame(false);
-        if (!cancelled) reconnectTimer = setTimeout(connect, 5000);
-      };
-      ws.onerror = () => ws?.close();
-
-      ws.onmessage = (e: MessageEvent<ArrayBuffer>) => {
-        if (type === "raw") {
-          const frame = decodePointCloud(e.data);
-          if (!frame) return;
-          updatePointCloud(points, frame);
-        } else {
-          const frame = decodeCostmap(e.data);
-          if (!frame) return;
-          updateCostmap(costmap, frame);
-        }
-        setHasFrame(true);
-      };
-    };
-
-    connect();
-
-    return () => {
-      cancelled = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      ws?.close();
-    };
-  }, [type, points, costmap]);
+  useEffect(
+    () =>
+      perceptionStream.subscribe(
+        type,
+        (buffer) => {
+          if (type === "raw") {
+            const frame = decodePointCloud(buffer);
+            if (!frame) return;
+            updatePointCloud(points, frame);
+          } else {
+            const frame = decodeCostmap(buffer);
+            if (!frame) return;
+            updateCostmap(costmap, frame);
+          }
+          setHasFrame(true);
+        },
+        () => setHasFrame(false),
+      ),
+    [type, points, costmap],
+  );
 
   useEffect(
     () => () => {

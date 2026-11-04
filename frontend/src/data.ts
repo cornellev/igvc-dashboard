@@ -262,6 +262,105 @@ class SocketService {
   }
 }
 
+/** Named events on GET /perception. Each carries one published frame, base64-encoded. */
+export type PerceptionEvent = "raw" | "costmap";
+
+type FrameHandler = (frame: ArrayBuffer) => void;
+type PerceptionSubscriber = { onFrame: FrameHandler; onLost: () => void };
+
+// Built into current browsers (Chrome 140+, Firefox 133+, Safari 18.2+) but not yet in TS's lib.
+const nativeFromBase64 = (
+  Uint8Array as unknown as { fromBase64?: (text: string) => Uint8Array }
+).fromBase64;
+
+const decodeBase64 = (text: string): ArrayBuffer => {
+  if (nativeFromBase64) return nativeFromBase64.call(Uint8Array, text).buffer as ArrayBuffer;
+  const binary = atob(text);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+};
+
+/**
+ * One shared EventSource for every perception panel, so all sources use a single
+ * browser connection. Opens with the first subscriber and closes after the last.
+ */
+class PerceptionStream {
+  private source: EventSource | null = null;
+  private subscribers = new Map<PerceptionEvent, Set<PerceptionSubscriber>>();
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectInterval = 5000;
+
+  public subscribe(
+    event: PerceptionEvent,
+    onFrame: FrameHandler,
+    onLost: () => void,
+  ): () => void {
+    const subscriber = { onFrame, onLost };
+    const forEvent = this.subscribers.get(event) ?? new Set();
+    const isNewEvent = forEvent.size === 0;
+    forEvent.add(subscriber);
+    this.subscribers.set(event, forEvent);
+
+    if (!this.source && !this.retryTimer) this.connect();
+    else if (this.source && isNewEvent) this.listen(this.source, event);
+
+    return () => {
+      forEvent.delete(subscriber);
+      if (this.subscriberCount() === 0) this.close();
+    };
+  }
+
+  private subscriberCount(): number {
+    let count = 0;
+    for (const set of this.subscribers.values()) count += set.size;
+    return count;
+  }
+
+  private listen(source: EventSource, event: PerceptionEvent): void {
+    source.addEventListener(event, (e: MessageEvent<string>) => {
+      const subscribers = this.subscribers.get(event);
+      if (!subscribers?.size) return;
+      const frame = decodeBase64(e.data);
+      for (const subscriber of subscribers) subscriber.onFrame(frame);
+    });
+  }
+
+  private connect(): void {
+    this.retryTimer = null;
+    const source = new EventSource(getHttpUrl("/perception"));
+    this.source = source;
+    for (const [event, set] of this.subscribers) {
+      if (set.size > 0) this.listen(source, event);
+    }
+
+    source.onopen = () => console.log("Perception stream connected");
+    source.onerror = () => {
+      for (const set of this.subscribers.values()) {
+        for (const subscriber of set) subscriber.onLost();
+      }
+      // Same retry rule as the telemetry stream: the browser retries dropped
+      // connections itself, but gives up (CLOSED) after a failed response.
+      if (source.readyState !== EventSource.CLOSED) {
+        console.warn("Perception stream lost. Reconnecting...");
+        return;
+      }
+      console.error("Perception stream closed. Retrying...");
+      if (this.source === source) this.source = null;
+      this.retryTimer = setTimeout(() => this.connect(), this.reconnectInterval);
+    };
+  }
+
+  private close(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.source?.close();
+    this.source = null;
+  }
+}
+
+export const perceptionStream = new PerceptionStream();
+
 const socketService = SocketService.getInstance();
 
 export default socketService;
