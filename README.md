@@ -248,7 +248,9 @@ From the repository root:
 python3 tools/dummy/run.py
 ```
 
-The process listens on `tcp/0.0.0.0:7449` (`DUMMY_ZENOH_LISTEN`). Each registered topic is published at its own rate. Today that is `segmented_points` on `cev/sensors/lidar/segmented_points` at 10 Hz. The key follows `LIDAR_ZENOH_KEY` when that variable is set.
+The process listens on `tcp/0.0.0.0:7449` (`DUMMY_ZENOH_LISTEN`). Each registered topic is published at its own rate. The registered names are `segmented_points`, `imu`, `costmap`, `occupancy_grid_global`, `occupancy_grid_local`, `rgb_image`, `depth_image`, `objects`, `pose`, `gps_position`, `right_rpm`, `left_rpm`, `steering_angle`, `lanes`, `global_map`, `ref_trajectory`, `global_route`, `goal`, `control`, and `estop`. The key and rate for each one live in its module. A matching `*_ZENOH_KEY` variable overrides that module's key when set.
+
+Left out for now: `cev/sensors/lidar/raw_points`, `cev/sensors/lidar/range_graph`, `cev/sensors/magnetometer`, and `cev/sensors/camera/occupancy_grid`.
 
 `DUMMY_TOPICS` is a comma-separated list of topic names. Leave it unset to publish every registered topic. A name left off the list is not published, which leaves that key free for the real publisher. An unknown name exits. Do not run the real publisher for a key that is also on this list; the subscriber will interleave both streams.
 

@@ -1,5 +1,47 @@
 """Topics the dummy publisher can send. Add a module here to register the next one."""
 
-from topics import imu, segmented_points
+from topics import (
+    control,
+    costmap,
+    depth_image,
+    estop,
+    global_map,
+    global_route,
+    goal,
+    gps_position,
+    imu,
+    lanes,
+    left_rpm,
+    objects,
+    occupancy_grid_global,
+    occupancy_grid_local,
+    pose,
+    ref_trajectory,
+    rgb_image,
+    right_rpm,
+    segmented_points,
+    steering_angle,
+)
 
-TOPICS = [segmented_points, imu]
+TOPICS = [
+    segmented_points,
+    imu,
+    costmap,
+    occupancy_grid_global,
+    occupancy_grid_local,
+    rgb_image,
+    depth_image,
+    objects,
+    pose,
+    gps_position,
+    right_rpm,
+    left_rpm,
+    steering_angle,
+    lanes,
+    global_map,
+    ref_trajectory,
+    global_route,
+    goal,
+    control,
+    estop,
+]
