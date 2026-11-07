@@ -7,12 +7,16 @@
 //
 // The second endpoint is the mock camera (tools/mock_vehicle.py, started in the
 // same container when RUN_MOCK_CAMERA=true); keep it in sync with
-// MOCK_ZENOH_LISTEN. Zenoh keeps retrying endpoints that aren't up yet, so
-// either publisher may be absent.
+// MOCK_ZENOH_LISTEN.
+//
+// The third endpoint is the dummy publisher (tools/dummy/run.py, running on
+// the host). Keep the port in sync with DUMMY_ZENOH_LISTEN, which defaults to
+// tcp/0.0.0.0:7449 so this container can reach it through host.docker.internal.
+// Zenoh keeps retrying endpoints that aren't up yet, so any publisher may be absent.
 {
   mode: "peer",
   connect: {
-    endpoints: ["tcp/host.docker.internal:7447", "tcp/127.0.0.1:7448"],
+    endpoints: ["tcp/host.docker.internal:7447", "tcp/127.0.0.1:7448", "tcp/host.docker.internal:7449"],
   },
   scouting: {
     multicast: { enabled: false },

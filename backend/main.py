@@ -49,6 +49,8 @@ async def broadcaster(app: FastAPI):
     while True:
         await asyncio.to_thread(state.data_ready.wait, 1.0)
         state.data_ready.clear()
+        # TODO: only the newest snapshot is sent per wake-up; snapshots arriving between
+        # wake-ups are skipped. Fine at 40 Hz, recheck for faster series (e.g. IMU).
         snapshot = state.get_latest_snapshot()
         if snapshot is None:
             continue

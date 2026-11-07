@@ -28,6 +28,9 @@ from unittest.mock import MagicMock
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "dummy"))
+
+from topics.segmented_points import encode_points, payload, segmented_data
 
 HAS_ZENOH = importlib.util.find_spec("zenoh") is not None
 
@@ -45,24 +48,6 @@ def stub_missing_ros_modules():
         sys.modules["rclpy.node"] = types.SimpleNamespace(Node=object)
     if "cv2" not in sys.modules and importlib.util.find_spec("cv2") is None:
         sys.modules["cv2"] = MagicMock()
-
-
-"""
-# Mimics the publisher from virtual-rgbd-sensor in Rust.
-#
-# Fake publisher that packs bits the same way as the
-# original Rust repo
-"""
-
-def encode_points(stamp_sec, stamp_nanosec, data, point_step):
-    """Mirror of `encode_points` in rslidar_sdk_node.rs."""
-    width = len(data) // point_step
-    return struct.pack("<iIII", stamp_sec, stamp_nanosec, width, point_step) + data
-
-
-def segmented_data(points):
-    """XYZI f32 + trailing i32 cluster id per point, like `build_segmented_data`."""
-    return b"".join(struct.pack("<ffffi", *p) for p in points)
 
 
 def encode_costmap(stamp_sec, stamp_nanosec, size_x, size_y, resolution, origin_x, origin_y, costs):
@@ -248,6 +233,34 @@ class LidarPerceptionTests(ZenohSubscriberTestCase):
             limit=2, timeout=2,
             during=lambda: self.put_and_wait(self.client.costmap, self.costmap_key, second))
         self.assertEqual(received, [("costmap", first), ("costmap", second)])
+
+
+class SegmentedPointsDummyTests(unittest.TestCase):
+    """The dummy cloud uses the same 20-byte segmented layout the subscriber decodes."""
+
+    def test_payload_header_and_clusters(self):
+        now_ns = 1_700_000_000_500_000_000
+        raw = payload(0, now_ns)
+        sec, nsec, width, step = struct.unpack_from("<iIII", raw, 0)
+
+        self.assertEqual((sec, nsec, step), (1_700_000_000, 500_000_000, 20))
+        self.assertEqual(len(raw) - 16, width * step)
+
+        clusters = set()
+        nan_points = 0
+        for i in range(width):
+            offset = 16 + i * step
+            x, _y, _z, _intensity = struct.unpack_from("<ffff", raw, offset)
+            (cluster,) = struct.unpack_from("<i", raw, offset + 16)
+            clusters.add(cluster)
+            if x != x:  # NaN
+                nan_points += 1
+
+        self.assertEqual(clusters, {0, 1, 2, -1})
+        self.assertEqual(nan_points, 3)
+
+    def test_right_post_moves_between_frames(self):
+        self.assertNotEqual(payload(0, 0), payload(20, 0))
 
 
 def live(seconds):
