@@ -132,7 +132,7 @@ class CameraSubscriber:
 
 
 class LidarSubscriber:
-    def __init__(self, session: zenoh.Session, key: str = "rslidar/points/segmented"):
+    def __init__(self, session: zenoh.Session, key: str = "cev/sensors/lidar/segmented_points"):
         self._lock = threading.Lock()
         self._latest = None          # (stamp, points ndarray)
         self._latest_raw = None      # the payload as published, for /ws/lidar/raw
@@ -169,7 +169,7 @@ class LidarSubscriber:
 """Zenoh costmap subscriber; path and waypoint inputs are not defined yet."""
 
 class CostmapSubscriber:
-    def __init__(self, session: zenoh.Session, key: str = "rslidar/costmap"):
+    def __init__(self, session: zenoh.Session, key: str = "cev/mapping/costmap"):
         self._lock = threading.Lock()
         self._latest = None          # (stamp, info dict, costs ndarray[size_y, size_x])
         self._latest_raw = None      # the payload as published, for /ws/lidar/costmap
