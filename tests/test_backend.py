@@ -6,6 +6,7 @@ isolated ROS environment to also exercise the real subscribers and lifecycle.
 
 import asyncio
 import importlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -195,9 +196,12 @@ class RosMappingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("/replay/rosbag", self.main.app.openapi()["paths"])
 
     async def test_standalone_localization_still_groups_imu_and_gnss(self):
+        import rclpy
         from std_msgs.msg import String
         from subscribers.localization import MultiTopicSubscriber
 
+        # The app no longer initializes ROS; the prototype needs its own context.
+        rclpy.init()
         node = MultiTopicSubscriber()
         try:
             for topic in ("imu", "gnss1", "gnss2"):
@@ -211,22 +215,25 @@ class RosMappingTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("imu", self.main.app.state.dashboard.get_latest_all()[0])
         finally:
             node.destroy_node()
+            rclpy.shutdown()
 
 
-@unittest.skipUnless(RUN_ROS, "set DASHBOARD_TEST_ROS=1 inside the ROS container")
+@unittest.skipUnless(importlib.util.find_spec("zenoh"), "pip install eclipse-zenoh")
 class LifecycleTests(unittest.TestCase):
-    def test_partial_startup_releases_already_created_ros_resources(self):
-        os.environ["ROS_LOCALHOST_ONLY"] = "1"
-        os.environ["ROS_DOMAIN_ID"] = "213"
-        import rclpy
-        from zenoh_client import LegacyRosClient
+    def test_partial_startup_releases_already_created_zenoh_resources(self):
+        import zenoh
+        from zenoh_client import ZenohClient
 
-        client = LegacyRosClient(DashboardState())
+        # Tests must never reach the vehicle's LAN.
+        config = zenoh.Config()
+        config.insert_json5("scouting/multicast/enabled", "false")
+        client = ZenohClient(config=config, state=DashboardState())
         with patch("zenoh_client.CameraSubscriber", side_effect=RuntimeError("camera failed")):
             with self.assertRaisesRegex(RuntimeError, "camera failed"):
                 client.start()
-        self.assertFalse(rclpy.ok())
-        self.assertEqual(client._nodes, [])
+        self.assertIsNone(client.session)
+        self.assertIsNone(client.controls)
+        self.assertEqual(client._subscribers, [])
         client.stop()  # Shutdown is also safe after failed startup.
 
 

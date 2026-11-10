@@ -9,7 +9,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from state import DashboardState
-from zenoh_client import LegacyRosClient
+from zenoh_client import ZenohClient
 
 # Lidar/costmap frames arrive at ~10 Hz; poll faster so a new frame goes out promptly.
 LIDAR_POLL_HZ = 20
@@ -73,7 +73,7 @@ async def broadcaster(app: FastAPI):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.dashboard = DashboardState()
-    app.state.client = LegacyRosClient(app.state.dashboard)
+    app.state.client = ZenohClient(state=app.state.dashboard)
     app.state.clients = set()
     app.state.client.start()
     broadcaster_task = asyncio.create_task(broadcaster(app)) # This sends all data out to all clients
