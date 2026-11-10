@@ -6,9 +6,7 @@ Adi, Julia
 
 ---
 
-**Planned UI** — target layout; not the current build.
-
-![Planned autonomy dashboard](frontend/public/planned-autonomy-dashboard.png)
+![Live Dashboard Image](frontend/public/LiveRED.png)
 
 ---
 
@@ -92,7 +90,7 @@ Live telemetry and analysis for the car: sensor streams (with filtering) and der
 ## System Overview
 
 ```
-Zenoh Sensors → Backend (Python + Zenoh) → SSE / MJPEG Streams → Frontend (React + TypeScript + Bun)
+Zenoh Sensors → Backend (Python + Zenoh) → WebSocket Stream → Frontend (React + TypeScript + Bun)
 
 ```
 
@@ -158,7 +156,7 @@ lifecycle code also releases already-created resources if startup fails.
 
 | File | Source and responsibility |
 | --- | --- |
-| `backend/main.py` | FastAPI endpoints, streaming routes (SSE and MJPEG), and broadcaster. |
+| `backend/main.py` | Existing FastAPI endpoints, WebSocket handlers, and broadcaster. |
 | `backend/zenoh_client.py` | ROS startup, executor threads, and shutdown extracted from the old `main.py`. |
 | `backend/state.py` | Latest values, per-topic timestamps, and bounded history extracted from the old subscribers and `main.py`. |
 | `backend/controls.py` | Moved from `autonomy_control.py`; still publishes ROS `Int32` values. |
@@ -184,31 +182,19 @@ context remains `frontend/`. Backend documentation is consolidated here.
 ### Running the backend
 
 Existing Compose commands above continue to apply. For the backend alone, run
-from `backend/` (Python 3.10+) 
+from `backend/` in an environment with ROS 2 Humble installed:
 
 ```bash
 pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 2
+source /opt/ros/humble/setup.bash
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
-
-The timeout matters: browsers keep the streams open indefinitely, so without it
-Ctrl+C waits until every dashboard tab is closed. Set `ZENOH_CONFIG` to a json5
-file to connect to a specific Zenoh endpoint instead of multicast discovery.
 
 The relocated standalone subscriber examples should be run as modules from
 `backend/`, for example `python -m subscribers.localization`.
 
-The API keeps `GET /` and `GET /healthz`. Live data streams are one-way HTTP:
-
-| Route | Format | Carries |
-| `GET /stream` | Server-Sent Events | telemetry JSON `{seq, data, stamp_ns}` |
-| `GET /camera/{left\|right}` | MJPEG | camera video; open it in a browser tab to view a feed directly |
-| `GET /perception` | Server-Sent Events | named events `raw` (point cloud) and `costmap`, each the published frame base64-encoded |
-
-New perception sources should be added as named events on `/perception` rather
-than as new routes: browsers allow only about 6 open HTTP/1.1 connections per
-backend, and every stream holds one. The frontend reaches the backend at port
-8000 on the page's host, or at `VITE_BACKEND_URL` when set. Control routes remain `POST /bag/start`,
+The API keeps `GET /`, `GET /healthz`, `WS /ws/stream`, and
+`WS /ws/camera/{left|right}`. Control routes remain `POST /bag/start`,
 `POST /bag/stop`, `GET /bag/status`, `POST /autonomy/start`,
 `POST /autonomy/stop`, `GET /autonomy/status`, and `GET /control/status`.
 Control status describes the requested state, not confirmation from the vehicle.

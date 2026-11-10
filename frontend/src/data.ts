@@ -3,20 +3,20 @@ import type { SocketData } from "./types";
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 
-const getDefaultHttpBase = () => {
+const getDefaultWebSocketBase = () => {
   if (typeof window === "undefined") {
-    return "http://127.0.0.1:8000";
+    return "ws://127.0.0.1:8000";
   }
 
-  return `${window.location.protocol}//${window.location.hostname}:8000`;
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.hostname}:8000`;
 };
 
-/** Backend URL for a path: VITE_BACKEND_URL if set, else port 8000 on the page's host. */
-export const getHttpUrl = (path: string) => {
-  const configuredBase = import.meta.env.VITE_BACKEND_URL?.trim();
+export const getWebSocketUrl = (path: string) => {
+  const configuredBase = import.meta.env.VITE_BACKEND_WS_URL?.trim();
   const baseUrl = configuredBase
     ? trimTrailingSlash(configuredBase)
-    : getDefaultHttpBase();
+    : getDefaultWebSocketBase();
 
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${baseUrl}${normalizedPath}`;
@@ -152,10 +152,10 @@ export const normalizeSocketData = (
   };
 };
 
-class TelemetryStream {
-  private static instance: TelemetryStream;
-  private source: EventSource | null = null;
-  private url: string = getHttpUrl("/stream");
+class SocketService {
+  private static instance: SocketService;
+  private socket: WebSocket | null = null;
+  private url: string = getWebSocketUrl("/ws/stream");
   private handlers: Set<MessageHandler> = new Set();
   private reconnectInterval: number = 5000;
   private data: SocketData[] = [];
@@ -164,25 +164,23 @@ class TelemetryStream {
 
   private constructor() {}
 
-  public static getInstance(): TelemetryStream {
-    if (!TelemetryStream.instance) {
-      TelemetryStream.instance = new TelemetryStream();
+  public static getInstance(): SocketService {
+    if (!SocketService.instance) {
+      SocketService.instance = new SocketService();
     }
-    return TelemetryStream.instance;
+    return SocketService.instance;
   }
 
   public connect(): void {
-    // EventSource reconnects on its own, so one per service is enough.
-    if (this.source) return;
+    if (this.socket?.readyState === WebSocket.OPEN) return;
 
-    const source = new EventSource(this.url);
-    this.source = source;
+    this.socket = new WebSocket(this.url);
 
-    source.onopen = () => {
-      console.log("Telemetry stream connected");
+    this.socket.onopen = () => {
+      console.log("WebSocket Connected");
     };
 
-    source.onmessage = (event: MessageEvent<string>) => {
+    this.socket.onmessage = (event: MessageEvent) => {
       const recvMs = Date.now();
       const envelope = JSON.parse(event.data);
       const data = normalizeSocketData(
@@ -195,17 +193,14 @@ class TelemetryStream {
       this.resetDataTimeout();
     };
 
-    source.onerror = () => {
-      // A dropped connection is retried by the browser (readyState CONNECTING).
-      // It gives up (CLOSED) on a failed response, e.g. the backend replying
-      // with an error while it starts, so retry those ourselves.
-      if (source.readyState !== EventSource.CLOSED) {
-        console.warn("Telemetry stream lost. Reconnecting...");
-        return;
-      }
-      console.error("Telemetry stream closed. Retrying...");
-      if (this.source === source) this.source = null;
+    this.socket.onclose = () => {
+      console.log("WebSocket Disconnected. Reconnecting...");
       setTimeout(() => this.connect(), this.reconnectInterval);
+    };
+
+    this.socket.onerror = (error) => {
+      console.error("WebSocket Error:", error);
+      this.socket?.close();
     };
   }
 
@@ -213,10 +208,10 @@ class TelemetryStream {
     if (this.dataTimeoutHandle) clearTimeout(this.dataTimeoutHandle);
     this.dataTimeoutHandle = setTimeout(() => {
       console.warn(
-        `[Telemetry] Error: no data received for >${this.DATA_TIMEOUT_MS / 1000}s. possible reasons:` +
-          `\n- the vehicle is not publishing telemetry on Zenoh` +
-          `\n- laptop and vehicle are not on the same LAN` +
-          `\n- the backend's Zenoh config (ZENOH_CONFIG) does not reach the vehicle`,
+        `[ROS] Error: no data received for >${this.DATA_TIMEOUT_MS / 1000}s. possible reasons:` +
+          `\n- ros publisher is not publishing` +
+          `\n- laptop and publisher are not on the same LAN` +
+          `\n- you are not using the correct Fast DDS discovery server LAN IP address`,
       );
     }, this.DATA_TIMEOUT_MS);
   }
@@ -235,114 +230,22 @@ class TelemetryStream {
     return this.data.length > 0 ? this.data[this.data.length - 1] : null;
   }
 
-  public disconnect(): void {
-    this.source?.close();
-    this.source = null;
-  }
-}
-
-/** Named events on GET /perception. Each carries one published frame, base64-encoded. */
-export type PerceptionEvent = "raw" | "costmap";
-
-type FrameHandler = (frame: ArrayBuffer) => void;
-type PerceptionSubscriber = { onFrame: FrameHandler; onLost: () => void };
-
-// Built into current browsers (Chrome 140+, Firefox 133+, Safari 18.2+) but not yet in TS's lib.
-const nativeFromBase64 = (
-  Uint8Array as unknown as { fromBase64?: (text: string) => Uint8Array }
-).fromBase64;
-
-const decodeBase64 = (text: string): ArrayBuffer => {
-  if (nativeFromBase64) return nativeFromBase64.call(Uint8Array, text).buffer as ArrayBuffer;
-  const binary = atob(text);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-};
-
-/**
- * One shared EventSource for every perception panel, so all sources use a single
- * browser connection. Opens with the first subscriber and closes after the last.
- */
-class PerceptionStream {
-  private source: EventSource | null = null;
-  private subscribers = new Map<PerceptionEvent, Set<PerceptionSubscriber>>();
-  private retryTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectInterval = 5000;
-
-  public subscribe(
-    event: PerceptionEvent,
-    onFrame: FrameHandler,
-    onLost: () => void,
-  ): () => void {
-    const subscriber = { onFrame, onLost };
-    const forEvent = this.subscribers.get(event) ?? new Set();
-    const isNewEvent = forEvent.size === 0;
-    forEvent.add(subscriber);
-    this.subscribers.set(event, forEvent);
-
-    if (!this.source && !this.retryTimer) this.connect();
-    else if (this.source && isNewEvent) this.listen(this.source, event);
-
-    return () => {
-      forEvent.delete(subscriber);
-      if (this.subscriberCount() === 0) this.close();
-    };
-  }
-
-  private subscriberCount(): number {
-    let count = 0;
-    for (const set of this.subscribers.values()) count += set.size;
-    return count;
-  }
-
-  private listen(source: EventSource, event: PerceptionEvent): void {
-    source.addEventListener(event, (e: MessageEvent<string>) => {
-      const subscribers = this.subscribers.get(event);
-      if (!subscribers?.size) return;
-      const frame = decodeBase64(e.data);
-      for (const subscriber of subscribers) subscriber.onFrame(frame);
-    });
-  }
-
-  private connect(): void {
-    this.retryTimer = null;
-    const source = new EventSource(getHttpUrl("/perception"));
-    this.source = source;
-    for (const [event, set] of this.subscribers) {
-      if (set.size > 0) this.listen(source, event);
+  public send(data: unknown): void {
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify(data));
+    } else {
+      console.error("Socket not connected");
     }
-
-    source.onopen = () => console.log("Perception stream connected");
-    source.onerror = () => {
-      for (const set of this.subscribers.values()) {
-        for (const subscriber of set) subscriber.onLost();
-      }
-      // Same retry rule as the telemetry stream: the browser retries dropped
-      // connections itself, but gives up (CLOSED) after a failed response.
-      if (source.readyState !== EventSource.CLOSED) {
-        console.warn("Perception stream lost. Reconnecting...");
-        return;
-      }
-      console.error("Perception stream closed. Retrying...");
-      if (this.source === source) this.source = null;
-      this.retryTimer = setTimeout(() => this.connect(), this.reconnectInterval);
-    };
   }
 
-  private close(): void {
-    if (this.retryTimer) clearTimeout(this.retryTimer);
-    this.retryTimer = null;
-    this.source?.close();
-    this.source = null;
+  public disconnect(): void {
+    this.socket?.close();
   }
 }
 
-export const perceptionStream = new PerceptionStream();
+const socketService = SocketService.getInstance();
 
-const telemetryStream = TelemetryStream.getInstance();
-
-export default telemetryStream;
+export default socketService;
 
 /** Optional telemetry guard retained from the old run-tracking controls. */
 export function canStartRunTracking(
@@ -358,11 +261,14 @@ export function canStartRunTracking(
   return true;
 }
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
 export async function postControlRequest(
   path: string,
   fallbackMessage: string,
 ) {
-  const response = await fetch(getHttpUrl(path), {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   });

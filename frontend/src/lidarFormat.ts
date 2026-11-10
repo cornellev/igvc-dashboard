@@ -1,4 +1,4 @@
-/** Decoders for the /perception "raw" (point cloud) and "costmap" event payloads, after base64 decoding. */
+/** Decoders for the lidar WebSocket streams (/ws/lidar/raw, /ws/lidar/costmap). */
 
 // Wire formats, as written by encode_points / encode_costmap in
 // virtual-rgbd-sensor's rslidar_sdk_node.rs and forwarded unchanged by the backend.

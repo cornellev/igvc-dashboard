@@ -29,6 +29,7 @@
               pkgs.bun
               pkgs.python3
               # pkgs.python3Packages.uvicorn
+              # pkgs.python3Packages.websockets
               # pkgs.python3Packages.pyserial
               # pkgs.python3Packages.httpx
               # pkgs.python3Packages.rosbags

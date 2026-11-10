@@ -169,70 +169,81 @@ class CostmapSubscriberTests(ZenohSubscriberTestCase):
         self.assertIsNone(self.client.costmap.get_latest())
 
 
-class LidarPerceptionTests(ZenohSubscriberTestCase):
-    """/perception forwards the published lidar/costmap bytes unchanged, base64-encoded."""
+class RecordingSocket:
+    """Stands in for a FastAPI WebSocket; disconnects after `limit` sends."""
+
+    def __init__(self, limit=1):
+        self.sent = []
+        self.limit = limit
+        self.accepted = False
+
+    async def accept(self):
+        self.accepted = True
+
+    async def send_bytes(self, data):
+        from fastapi import WebSocketDisconnect
+        self.sent.append(data)
+        if len(self.sent) >= self.limit:
+            raise WebSocketDisconnect()
+
+
+class LidarWebSocketTests(ZenohSubscriberTestCase):
+    """/ws/lidar/raw and /ws/lidar/costmap forward the published bytes unchanged."""
 
     def setUp(self):
         super().setUp()
         import main
         self.main = main
-        main.app.state.client = self.client   # the route only uses .lidar and .costmap
+        main.app.state.client = self.client   # the routes only use .lidar and .costmap
 
-    def collect(self, limit, timeout, during=None):
-        """Read up to `limit` (event, decoded bytes) pairs from /perception within `timeout` s.
-
-        `during`, if given, runs in a thread once the stream has started.
-        """
+    def run_route(self, route, socket, timeout):
         import asyncio
-        import base64
+        try:
+            asyncio.run(asyncio.wait_for(route(socket), timeout))
+        except asyncio.TimeoutError:
+            pass
 
-        async def scenario():
-            stream = self.main.perception_stream()
-            received = []
-
-            async def read():
-                async for event in stream:
-                    received.append((event.event, base64.b64decode(event.raw_data)))
-                    if len(received) >= limit:
-                        return
-
-            reader = asyncio.create_task(read())
-            if during:
-                await asyncio.sleep(0.2)
-                await asyncio.to_thread(during)
-            try:
-                await asyncio.wait_for(reader, timeout)
-            except asyncio.TimeoutError:
-                pass
-            await stream.aclose()
-            return received
-
-        return asyncio.run(scenario())
-
-    def test_lidar_payload_is_sent_unchanged(self):
+    def test_lidar_route_sends_published_payload_unchanged(self):
         payload = encode_points(5, 0, segmented_data([(1, 2, 3, 4, 7), (float("nan"), 0, 0, 0, -1)]), 20)
         self.put_and_wait(self.client.lidar, self.lidar_key, payload)
-        # NaN points are left for the browser to skip
-        self.assertEqual(self.collect(limit=1, timeout=2), [("raw", payload)])
 
-    def test_costmap_payload_is_sent_unchanged(self):
+        socket = RecordingSocket()
+        self.run_route(self.main.websocket_lidar_raw, socket, timeout=2)
+        self.assertTrue(socket.accepted)
+        self.assertEqual(socket.sent, [payload])   # NaN points are left for the browser to skip
+
+    def test_costmap_route_sends_published_payload_unchanged(self):
         payload = encode_costmap(5, 0, 3, 2, 0.05, -1.5, 2.25, [0, 128, 254, 255, 0, 253])
         self.put_and_wait(self.client.costmap, self.costmap_key, payload)
-        self.assertEqual(self.collect(limit=1, timeout=2), [("costmap", payload)])
+
+        socket = RecordingSocket()
+        self.run_route(self.main.websocket_lidar_costmap, socket, timeout=2)
+        self.assertEqual(socket.sent, [payload])
 
     def test_unchanged_frame_is_not_resent(self):
         payload = encode_costmap(1, 0, 2, 2, 0.1, 0.0, 0.0, [0, 1, 2, 3])
         self.put_and_wait(self.client.costmap, self.costmap_key, payload)
-        self.assertEqual(self.collect(limit=99, timeout=0.5), [("costmap", payload)])   # ~10 polls
+
+        socket = RecordingSocket(limit=99)
+        self.run_route(self.main.websocket_lidar_costmap, socket, timeout=0.5)   # ~10 polls
+        self.assertEqual(socket.sent, [payload])
 
     def test_new_frames_are_sent_in_order(self):
         first = encode_costmap(1, 0, 2, 2, 0.1, 0.0, 0.0, [0, 1, 2, 3])
         second = encode_costmap(2, 0, 2, 2, 0.1, 0.0, 0.0, [3, 2, 1, 0])
         self.put_and_wait(self.client.costmap, self.costmap_key, first)
-        received = self.collect(
-            limit=2, timeout=2,
-            during=lambda: self.put_and_wait(self.client.costmap, self.costmap_key, second))
-        self.assertEqual(received, [("costmap", first), ("costmap", second)])
+
+        import asyncio
+
+        async def scenario():
+            socket = RecordingSocket(limit=2)
+            route = asyncio.create_task(self.main.websocket_lidar_costmap(socket))
+            await asyncio.sleep(0.2)
+            await asyncio.to_thread(self.put_and_wait, self.client.costmap, self.costmap_key, second)
+            await asyncio.wait_for(route, 2)
+            return socket.sent
+
+        self.assertEqual(asyncio.run(scenario()), [first, second])
 
 
 class SegmentedPointsDummyTests(unittest.TestCase):

@@ -1,34 +1,15 @@
-"""Dashboard controls published over Zenoh as CDR std_msgs/Int32.
+"""Existing ROS controls retained as filler for the future command interface."""
 
-zenoh-bridge-ros2dds forwards a Zenoh key to the ROS topic of the same name
-(dashboard_control/autonomy_run -> /dashboard_control/autonomy_run) once a ROS
-node subscribes to it, so vehicle-side subscribers keep receiving Int32 values.
-"""
-
-import struct
 import threading
 
-import zenoh
-
-# CDR encapsulation header for little-endian plain CDR (0x00, 0x01), then 2 option bytes.
-CDR_LE_HEADER = b"\x00\x01\x00\x00"
+from rclpy.node import Node
+from std_msgs.msg import Int32
 
 
-def encode_int32_cdr(value: int) -> bytes:
-    """Serialize a std_msgs/Int32 as little-endian CDR: 4-byte header, then i32 data."""
-    return CDR_LE_HEADER + struct.pack("<i", value)
+class DashboardControlPublisher(Node):
+    def __init__(self, topic_namespace: str, publish_hz: float):
+        super().__init__("dashboard_control_publisher")
 
-
-def decode_int32_cdr(b: bytes) -> int:
-    """Inverse of encode_int32_cdr; also accepts big-endian CDR. Raises ValueError if malformed."""
-    if len(b) != 8 or b[0] != 0 or b[1] not in (0, 1):
-        raise ValueError("not a CDR std_msgs/Int32 payload")
-    (value,) = struct.unpack_from("<i" if b[1] == 1 else ">i", b, 4)
-    return value
-
-
-class DashboardControlPublisher:
-    def __init__(self, session: zenoh.Session, topic_namespace: str, publish_hz: float):
         self._topic_namespace = topic_namespace.strip("/") or "dashboard_control"
         self._states = {
             "autonomy_run": False,
@@ -38,21 +19,19 @@ class DashboardControlPublisher:
         self._topics = {
             key: f"{self._topic_namespace}/{key}" for key in self._states
         }
+        # Node owns _publishers internally; keep our lookup separate so that
+        # its normal destroy_node() cleanup continues to work.
         self._control_publishers = {
-            key: session.declare_publisher(topic)
+            key: self.create_publisher(Int32, topic, 10)
             for key, topic in self._topics.items()
         }
+        self._timer = self.create_timer(
+            1.0 / max(publish_hz, 0.1),
+            self._publish_current_states,
+        )
 
-        # Republish the current states periodically, as the ROS timer did, so a
-        # subscriber that starts late still learns them.
-        self._interval = 1.0 / max(publish_hz, 0.1)
-        self._stop_evt = threading.Event()
-        self._thread = threading.Thread(target=self._publish_loop, daemon=True)
-        self._thread.start()
-
-        print(
-            f"[ZENOH] publishing dashboard control states under key namespace: {self._topic_namespace}",
-            flush=True,
+        self.get_logger().info(
+            f"Publishing dashboard control states under ROS topic namespace: {self._topic_namespace}"
         )
 
     def start_autonomy_run(self):
@@ -79,13 +58,6 @@ class DashboardControlPublisher:
             "bag": self.get_bag_status(),
         }
 
-    def close(self):
-        self._stop_evt.set()
-        self._thread.join(timeout=5.0)
-        for publisher in self._control_publishers.values():
-            publisher.undeclare()
-        self._control_publishers.clear()
-
     def _get_control_status(self, key: str, status_name: str):
         with self._lock:
             enabled = self._states[key]
@@ -103,10 +75,6 @@ class DashboardControlPublisher:
 
         self._publish_value(key, value)
 
-    def _publish_loop(self):
-        while not self._stop_evt.wait(self._interval):
-            self._publish_current_states()
-
     def _publish_current_states(self):
         with self._lock:
             states = self._states.copy()
@@ -115,7 +83,6 @@ class DashboardControlPublisher:
             self._publish_value(key, 1 if enabled else 0)
 
     def _publish_value(self, key: str, value: int):
-        try:
-            self._control_publishers[key].put(encode_int32_cdr(value))
-        except Exception as e:   # a closed session must not kill the loop or a REST call
-            print(f"[ZENOH] ERROR: failed to publish {self._topics[key]}: {e}", flush=True)
+        message = Int32()
+        message.data = value
+        self._control_publishers[key].publish(message)

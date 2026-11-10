@@ -83,7 +83,7 @@ def image_to_jpeg(height, width, encoding, step, data) -> bytes:
 
 
 class CameraSubscriber:
-    """Keep the latest camera frame as a JPEG for /camera/{side}.
+    """Keep the latest camera frame as a JPEG for /ws/camera/{side}.
 
     Accepts a CDR sensor_msgs/Image (what zenoh-bridge-ros2dds forwards from the
     ZED topics) or an already-encoded JPEG (a native Zenoh publisher), which is
@@ -135,7 +135,7 @@ class LidarSubscriber:
     def __init__(self, session: zenoh.Session, key: str = "cev/sensors/lidar/segmented_points"):
         self._lock = threading.Lock()
         self._latest = None          # (stamp, points ndarray)
-        self._latest_raw = None      # the payload as published, for the /perception "raw" event
+        self._latest_raw = None      # the payload as published, for /ws/lidar/raw
         self._frame_count = 0
         self._sub = session.declare_subscriber(key, self._callback)
 
@@ -172,7 +172,7 @@ class CostmapSubscriber:
     def __init__(self, session: zenoh.Session, key: str = "cev/mapping/costmap"):
         self._lock = threading.Lock()
         self._latest = None          # (stamp, info dict, costs ndarray[size_y, size_x])
-        self._latest_raw = None      # the payload as published, for the /perception "costmap" event
+        self._latest_raw = None      # the payload as published, for /ws/lidar/costmap
         self._frame_count = 0
         self._sub = session.declare_subscriber(key, self._callback)
 
