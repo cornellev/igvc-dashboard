@@ -1,0 +1,77 @@
+ Container igvc-dashboard-backend-run-0fffd5a11146 Creating 
+ Container igvc-dashboard-backend-run-0fffd5a11146 Created 
+[ZENOH] session opened
+[ZENOH] subscribed to rslidar/points/segmented
+listening on rslidar/points/segmented and rslidar/costmap for 30s...
+costmap ts=1483235739.799794 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5457 unknown=0 free=960185
+points  ts=1483235739.799794 valid_points=84734 | bbox x[-7.95,5.32] y[-13.65,3.04] z[-2.23,1.19] | clusters=302
+points  ts=1483235739.999820 valid_points=84632 | bbox x[-7.95,5.32] y[-13.70,3.03] z[-2.23,1.19] | clusters=282
+costmap ts=1483235739.999820 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5390 unknown=0 free=960214
+costmap ts=1483235740.199860 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5375 unknown=0 free=960261
+points  ts=1483235740.199860 valid_points=84544 | bbox x[-7.95,5.32] y[-13.68,3.04] z[-2.23,1.19] | clusters=284
+points  ts=1483235740.399781 valid_points=84658 | bbox x[-7.94,5.32] y[-13.71,3.04] z[-2.23,1.19] | clusters=265
+costmap ts=1483235740.399781 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5388 unknown=0 free=960218
+costmap ts=1483235740.599766 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5385 unknown=0 free=960218
+points  ts=1483235740.599766 valid_points=84628 | bbox x[-7.95,5.32] y[-13.63,3.04] z[-2.23,1.19] | clusters=297
+costmap ts=1483235740.799793 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5414 unknown=0 free=960203
+points  ts=1483235740.799793 valid_points=84698 | bbox x[-7.96,5.32] y[-13.70,3.04] z[-2.23,1.20] | clusters=301
+points  ts=1483235740.999840 valid_points=84576 | bbox x[-7.95,5.32] y[-13.69,3.04] z[-2.22,1.19] | clusters=284
+costmap ts=1483235740.999840 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5410 unknown=0 free=960224
+points  ts=1483235741.199838 valid_points=84493 | bbox x[-7.95,5.32] y[-13.71,3.04] z[-2.23,1.19] | clusters=281
+points  ts=1483235741.399788 valid_points=84508 | bbox x[-7.96,5.32] y[-13.71,3.03] z[-2.22,1.19] | clusters=327
+points  ts=1483235741.599788 valid_points=84468 | bbox x[-7.95,5.33] y[-13.69,3.04] z[-2.23,1.19] | clusters=296
+costmap ts=1483235741.599788 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5412 unknown=0 free=960164
+points  ts=1483235741.799777 valid_points=84608 | bbox x[-7.96,5.33] y[-13.67,3.04] z[-2.22,1.19] | clusters=276
+costmap ts=1483235741.799777 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5397 unknown=0 free=960179
+points  ts=1483235741.999810 valid_points=84754 | bbox x[-7.96,5.32] y[-13.72,3.04] z[-2.23,1.19] | clusters=295
+costmap ts=1483235741.999810 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5423 unknown=0 free=960218
+costmap ts=1483235742.199795 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5445 unknown=0 free=960222
+points  ts=1483235742.199795 valid_points=84588 | bbox x[-7.97,5.32] y[-13.66,3.04] z[-2.22,1.20] | clusters=285
+costmap ts=1483235742.399816 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5427 unknown=0 free=960189
+points  ts=1483235742.399816 valid_points=84547 | bbox x[-7.95,5.33] y[-13.68,3.04] z[-2.22,1.19] | clusters=290
+costmap ts=1483235742.599777 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5389 unknown=0 free=960180
+points  ts=1483235742.599777 valid_points=84651 | bbox x[-7.95,5.32] y[-13.70,3.04] z[-2.23,1.19] | clusters=272
+costmap ts=1483235742.799748 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5419 unknown=0 free=960218
+points  ts=1483235742.799748 valid_points=84696 | bbox x[-7.95,5.32] y[-13.73,3.04] z[-2.23,1.19] | clusters=297
+costmap ts=1483235742.999760 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5389 unknown=0 free=960194
+points  ts=1483235742.999760 valid_points=84481 | bbox x[-7.95,5.32] y[-13.65,3.03] z[-2.22,1.19] | clusters=276
+points  ts=1483235743.199754 valid_points=84621 | bbox x[-7.95,5.33] y[-13.68,3.04] z[-2.23,1.19] | clusters=263
+costmap ts=1483235743.199754 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5394 unknown=0 free=960224
+points  ts=1483235743.399785 valid_points=84561 | bbox x[-7.96,5.32] y[-13.59,3.04] z[-2.22,1.19] | clusters=289
+costmap ts=1483235743.399785 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5424 unknown=0 free=960222
+costmap ts=1483235743.599735 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5420 unknown=0 free=960197
+points  ts=1483235743.599735 valid_points=84603 | bbox x[-7.96,5.33] y[-13.73,3.04] z[-2.23,1.20] | clusters=296
+costmap ts=1483235743.799748 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5409 unknown=0 free=960192
+points  ts=1483235743.799748 valid_points=84721 | bbox x[-7.95,5.32] y[-13.66,3.04] z[-2.22,1.19] | clusters=287
+points  ts=1483235743.999760 valid_points=84711 | bbox x[-7.95,5.32] y[-13.69,3.04] z[-2.23,1.19] | clusters=302
+costmap ts=1483235743.999760 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5403 unknown=0 free=960168
+costmap ts=1483235744.199806 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5399 unknown=0 free=960194
+points  ts=1483235744.199806 valid_points=84609 | bbox x[-7.95,5.32] y[-13.73,3.04] z[-2.23,1.19] | clusters=287
+costmap ts=1483235744.399806 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5427 unknown=0 free=960193
+points  ts=1483235744.399806 valid_points=84666 | bbox x[-7.95,5.33] y[-13.69,3.04] z[-2.23,1.19] | clusters=310
+costmap ts=1483235744.599781 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5384 unknown=0 free=960233
+points  ts=1483235744.599781 valid_points=84570 | bbox x[-7.96,5.32] y[-13.61,3.04] z[-2.23,1.19] | clusters=277
+costmap ts=1483235744.799767 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5419 unknown=0 free=960165
+points  ts=1483235744.799767 valid_points=84761 | bbox x[-7.95,5.32] y[-13.67,3.04] z[-2.23,1.19] | clusters=287
+costmap ts=1483235744.999711 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5415 unknown=0 free=960195
+points  ts=1483235744.999711 valid_points=84705 | bbox x[-7.96,5.32] y[-13.70,3.04] z[-2.23,1.19] | clusters=279
+costmap ts=1483235745.199739 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5407 unknown=0 free=960197
+points  ts=1483235745.199739 valid_points=84676 | bbox x[-7.95,5.32] y[-13.68,3.04] z[-2.23,1.19] | clusters=295
+costmap ts=1483235745.399755 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5399 unknown=0 free=960212
+points  ts=1483235745.399755 valid_points=84560 | bbox x[-7.95,5.33] y[-13.69,3.04] z[-2.22,1.19] | clusters=303
+costmap ts=1483235745.599869 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5391 unknown=0 free=960192
+points  ts=1483235745.599869 valid_points=84559 | bbox x[-7.96,5.32] y[-13.68,3.04] z[-2.23,1.19] | clusters=286
+costmap ts=1483235745.799842 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5406 unknown=0 free=960227
+points  ts=1483235745.799842 valid_points=84456 | bbox x[-7.96,5.32] y[-13.65,3.04] z[-2.23,1.19] | clusters=265
+costmap ts=1483235745.999806 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5397 unknown=0 free=960222
+points  ts=1483235745.999806 valid_points=84672 | bbox x[-7.94,5.32] y[-13.62,3.04] z[-2.23,1.20] | clusters=285
+costmap ts=1483235746.199815 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5412 unknown=0 free=960170
+points  ts=1483235746.199815 valid_points=84606 | bbox x[-7.95,5.32] y[-13.72,3.04] z[-2.23,1.19] | clusters=281
+costmap ts=1483235746.399760 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5382 unknown=0 free=960228
+points  ts=1483235746.399760 valid_points=84646 | bbox x[-7.96,5.32] y[-13.67,3.04] z[-2.23,1.19] | clusters=284
+costmap ts=1483235746.599787 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5426 unknown=0 free=960146
+points  ts=1483235746.599787 valid_points=84592 | bbox x[-7.96,5.32] y[-13.68,3.04] z[-2.23,1.19] | clusters=300
+costmap ts=1483235746.799778 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5414 unknown=0 free=960170
+points  ts=1483235746.799778 valid_points=84667 | bbox x[-7.95,5.32] y[-13.70,3.05] z[-2.23,1.19] | clusters=298
+costmap ts=1483235746.999840 size=1000x1000 res=0.050 origin=(-25.00,-25.00) | lethal=5419 unknown=0 free=960163
+points  ts=1483235746.999840 valid_points=84633 | bbox x[-7.95,5.32] y[-13.71,3.03] z[-2.22,1.19] | clusters=292

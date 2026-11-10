@@ -5,7 +5,7 @@ source /opt/ros/humble/setup.bash
 
 if [ "${RUN_MOCK_CAMERA:-}" = "true" ]; then
 	echo "Starting mock camera..."
-	python3 /app/mock_camera.py &
+	python3 /app/tools/mock_vehicle.py &
 else
 	DISCOVERY_SERVER_HOST="${DISCOVERY_SERVER_IP:-${JETSON_LAN_IP:-}}"
 

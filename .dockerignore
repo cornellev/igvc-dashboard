@@ -2,3 +2,13 @@ frontend/data/*
 frontend/node_modules/*
 backend/__pycache__/*
 .codex
+.git
+.env
+.env.*
+.direnv
+.venv
+venv
+backend/env/
+**/__pycache__/
+**/*.pyc
+**/*.egg-info/

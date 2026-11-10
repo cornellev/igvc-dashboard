@@ -1,8 +1,8 @@
-# Intelligent Ground Vehicle Competition (IGVC) Dashboard
+# Autonomy Dashboard
 
 ## Team Members
 
-Ajay, Donte, Eric, Shreyaa
+Adi, Julia
 
 ---
 
@@ -12,7 +12,12 @@ Ajay, Donte, Eric, Shreyaa
 
 ## Summary
 
-Live telemetry and analysis for the car: sensor streams (with filtering), derived run metrics, a telemetry sidebar, and a browser-based replay mode for uploaded telemetry exports.
+The backend and frontend now follow the approved condensed repository layout.
+The existing implementations are retained as filler; Zenoh integration and new
+autonomy input contracts have not been implemented. See **Backend layout and
+current behavior** below for the mapping and intentionally deferred pieces.
+
+Live telemetry and analysis for the car: sensor streams (with filtering) and derived run metrics. The existing live view is retained; the empty sidebar and replay navigation are no longer mounted.
 
 **Sensor views**
 
@@ -20,13 +25,11 @@ Live telemetry and analysis for the car: sensor streams (with filtering), derive
 - **Power** time series (calculated from current and voltage data)
 - **GPS** location display with Google Maps
 - Live **Steering** angle, **Brake** pressure, **Throttle**, and **RPM** on all wheels
-- Timestamps and stopwatch for lap and race timing
+- Timestamps and stopwatch for recording duration
 
-**Replay tools**
+**Retained import helpers**
 
-- Upload a telemetry **CSV** export and replay it directly in the dashboard UI
-- Scrub through samples with a timeline slider or play/pause the run at multiple playback speeds
-- Reuse the same dashboard widgets in **Replay** mode to inspect historical data sample-by-sample
+- CSV parsing and telemetry-row adapters remain available in `frontend/src/data.ts` for fixtures and debugging; the replay page is not mounted.
 
 **Derived metrics**
 
@@ -54,7 +57,7 @@ Live telemetry and analysis for the car: sensor streams (with filtering), derive
 
 2. **Frontend Testing**
 
-   Refer to `frontend/README.md` for more information.  
+   Refer to the **Frontend development reference** below for more information.\
    **[Bun Installation](https://bun.com/docs/installation)**: The frontend uses **Bun** instead of **NodeJS** as a package manager
    and runtime. The installation is linked [here](https://bun.com/docs/installation). Then, run the following commands in the
    terminal to test/run the frontend in isolation.  
@@ -67,52 +70,41 @@ Live telemetry and analysis for the car: sensor streams (with filtering), derive
 
    **Google Maps**: To get location data and Google Maps properly displaying while
    running only the frontend with `bun dev`,
-   create a `.env` file in the `/frontend` directory. Follow the `.env.example` in the
-   `/frontend` and create the environment variables below.
+   set the variables below in the root `.env` (the existing Vite `envDir` points to
+   the repository root). The frontend `.env.example` also documents their names.
 
    ```env
    VITE_GOOGLE_MAPS_API_KEY=<Your Google Maps API Key here>
    VITE_GOOGLE_MAP_ID=<Your Google Maps Map ID from Google Cloud console>
    ```
 
-   Instructions for getting your own `API_KEY` and `MAP_ID` are in `frontend/README.md`.
+   Instructions for getting your own `API_KEY` and `MAP_ID` are in the **Frontend development reference** below.
 
 3. **Backend Troubleshooting**
 
-   Refer to `backend/README.md`.
+   Refer to **Backend layout and current behavior** below.
 
 <video src="frontend/public/LiveRED.mp4" loop muted autoplay></video>
 
 ---
+## System Overview
 
-## ROS Subscriber Data
+```
+Zenoh Sensors → Backend (Python + Zenoh) → WebSocket Stream → Frontend (React + TypeScript + Bun)
 
-For the ROS 2 subscriber over LAN, connect the laptop and Jetson to the same router
-network and set the Jetson's LAN IP in `.env`:
-
-```sh
-JETSON_LAN_IP=192.168.1.2
 ```
 
-Use `DISCOVERY_SERVER_IP` only if the Fast DDS discovery server is on a different
-LAN address than `JETSON_LAN_IP`.
+---
 
-## Replay Mode
+## Retained telemetry import adapters
 
-The frontend includes a dedicated **Replay** page alongside the live **Data** view.
-Use it to inspect telemetry exports without needing a live ROS2 stream.
-
-### Current capabilities
-
-- Upload a `.csv` telemetry file from the Replay page
-- Upload a rosbag2 SQLite `.db3` file from the Replay page
-- Play, pause, reset, and scrub through the uploaded run
-- Change playback speed from `0.5x` up to `100x`
-- Render replayed samples through the same dashboard layout used for live telemetry
+The replay page, upload controls and playback scheduler are excluded from this
+migration. Its reusable parsing and row-mapping code remains in
+`frontend/src/data.ts`, without making upload requests or affecting live data.
 
 ### CSV expectations
 
-CSV replay is parsed entirely in the frontend and is intentionally flexible about
+The retained CSV parser runs entirely in the frontend and is flexible about
 column names. Headers are normalized by lowercasing and removing punctuation, so
 both flat and dotted names are accepted.
 
@@ -127,30 +119,18 @@ Examples of supported fields include:
 - `rpm_front.left`, `rpm_front.right`, `rpm_back.left`, `rpm_back.right`
 - `global_ts`, `timestamp`, `time`, or a row index fallback when timestamps are missing
 
-If a speed column name includes `mph`, the replay parser converts it to meters per
-second before rendering. If GPS coordinates are missing, the dashboard falls back
-to default coordinates and shows a warning after upload.
+The retained speed helper can convert mph aliases to meters per second; the
+existing row mapper's alias lists are unchanged. Missing GPS coordinates retain
+the original defaults and parser warnings.
 
-### ROSBag expectations
+### ROSBag upload on this branch
 
-ROS bag replay currently supports rosbag2 SQLite `.db3` files and converts them
-through the backend into flattened CSV-style telemetry rows before rendering.
-Replayable messages should contain JSON payloads, like the example bag files
-under `frontend/data`. Messages that cannot be converted into telemetry rows are
-skipped during import.
+The backend converter and `POST /replay/rosbag` route remain removed as approved.
+The frontend upload request is also excluded. Pure row adapters are retained,
+but there is no active replay/upload page. The original replay demonstration
+below is historical, not a claim of current functionality.
 
 <video src="frontend/public/ReplayRED.mp4" loop muted autoplay></video>
-
----
-
-## System Overview
-
-```
-ROS2 Sensors → Backend (Python + ROS2) → WebSocket Stream → Frontend (React + TypeScript + Bun)
-
-Uploaded CSV → Frontend Replay Parser → Replay Timeline → Shared Dashboard Widgets
-Uploaded ROS bag `.db3` → Backend Bag Parser → Replay Timeline → Shared Dashboard Widgets
-```
 
 ---
 
@@ -159,4 +139,231 @@ Uploaded ROS bag `.db3` → Backend Bag Parser → Replay Timeline → Shared Da
 - The frontend can trigger ROSbag recording via `/bag` endpoints
 - The backend publishes rosbag recording state on `dashboard_control/bag_recording`
 - ROSbag recording consumers should subscribe to that control topic and start on `1`, stop on `0`
-- Local dashboard replay supports uploaded CSV telemetry exports and rosbag2 SQLite `.db3` files
+- CSV telemetry import adapters remain available as unconnected starter code
+
+---
+
+## Backend layout and current behavior
+
+This is a structural reorganization of the previous backend. ROS topics, payloads,
+sampling rates, camera encoding, and control signals remain the existing filler
+implementation. In particular, `zenoh_client.py` contains `LegacyRosClient`, not
+a Zenoh client. Its original timeout and broadcasting policies are also retained;
+this change does not introduce the planned diagnostics or per-client queues.
+One private control-publisher field was renamed to avoid overwriting ROS Node's
+internal publisher list, which otherwise prevents clean shutdown. Extracted
+lifecycle code also releases already-created resources if startup fails.
+
+| File | Source and responsibility |
+| --- | --- |
+| `backend/main.py` | Existing FastAPI endpoints, WebSocket handlers, and broadcaster. |
+| `backend/zenoh_client.py` | ROS startup, executor threads, and shutdown extracted from the old `main.py`. |
+| `backend/state.py` | Latest values, per-topic timestamps, and bounded history extracted from the old subscribers and `main.py`. |
+| `backend/controls.py` | Moved from `autonomy_control.py`; still publishes ROS `Int32` values. |
+| `backend/subscribers/perception.py` | Moved from `camera_subscriber.py`; camera handling only. |
+| `backend/subscribers/localization.py` | Moved from `igvcsubscriber.py`; standalone IMU/GNSS prototype, still not enabled at application startup. |
+| `backend/subscribers/status.py` | Moved from `subscriber.py`; the existing `spi_data` JSON subscriber. |
+| `backend/models.py` | Documentation-only placeholder until message contracts are defined. |
+| `backend/subscribers/planning.py` | Documentation-only placeholder; there is no previous planning implementation. |
+| `tools/mock_vehicle.py` | Moved from `backend/mock_camera.py`; still publishes the original mock camera images over ROS. |
+
+`requirements.txt` remains the dependency source used by Docker. The new
+`pyproject.toml` reads that same list instead of duplicating it. `uv.lock` is
+deferred until the uv dependency workflow is adopted; no placeholder lockfile is
+created. The removed `rosbags` dependency served only the removed converter;
+`asyncio` is provided by Python itself.
+
+The ROS Docker base, `backend/entrypoint.sh`, and
+`backend/super_client.example.xml` are retained because the current code requires
+them. All three Compose files now build the backend from the repository root so
+the relocated mock publisher can be copied into the image. The frontend build
+context remains `frontend/`. Backend documentation is consolidated here.
+
+### Running the backend
+
+Existing Compose commands above continue to apply. For the backend alone, run
+from `backend/` in an environment with ROS 2 Humble installed:
+
+```bash
+pip install -r requirements.txt
+source /opt/ros/humble/setup.bash
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+The relocated standalone subscriber examples should be run as modules from
+`backend/`, for example `python -m subscribers.localization`.
+
+The API keeps `GET /`, `GET /healthz`, `WS /ws/stream`, and
+`WS /ws/camera/{left|right}`. Control routes remain `POST /bag/start`,
+`POST /bag/stop`, `GET /bag/status`, `POST /autonomy/start`,
+`POST /autonomy/stop`, `GET /autonomy/status`, and `GET /control/status`.
+Control status describes the requested state, not confirmation from the vehicle.
+
+`ROS_DOMAIN_ID`, `ROS_LOCALHOST_ONLY`, `JETSON_LAN_IP`, and
+`DISCOVERY_SERVER_IP` retain their existing meaning. `DASHBOARD_CONTROL_TOPIC`
+defaults to `dashboard_control`; `DASHBOARD_CONTROL_PUBLISH_HZ` defaults to `10`.
+No Zenoh configuration or new input keys are introduced yet.
+
+### Checking the backend reorganization
+
+From the repository root, run `python3 -m unittest discover -s tests -v` for
+the state tests. ROS-dependent tests are explicitly skipped without the opt-in
+environment variable. To exercise the real ROS classes and browser handlers in
+an isolated container:
+
+```bash
+docker build -f backend/Dockerfile -t autonomy-dashboard-backend:layout-review .
+docker run --rm --network none -e DASHBOARD_TEST_ROS=1 \
+  --mount "type=bind,source=$PWD/tests,target=/app/tests,readonly" \
+  --entrypoint /bin/bash autonomy-dashboard-backend:layout-review \
+  -c 'source /opt/ros/humble/setup.bash && python3 -m unittest discover -s tests -v'
+```
+
+These tests cover state extraction, telemetry broadcast envelopes, camera JPEGs,
+control responses, the standalone localization prototype, startup cleanup, and
+the actual container entrypoint serving images from the relocated mock publisher.
+They use localhost-only ROS in a separate domain and do not connect to the vehicle.
+
+## Testing
+
+Dummy publishers run outside the backend and publish on the real Zenoh keys. The backend always subscribes to those keys and has no dummy mode. Run only one publisher on a given key.
+
+From the repository root:
+
+```bash
+python3 tools/dummy/run.py
+```
+
+The process listens on `tcp/0.0.0.0:7449` (`DUMMY_ZENOH_LISTEN`). Each registered topic is published at its own rate. The registered names are `segmented_points`, `imu`, `costmap`, `occupancy_grid_global`, `occupancy_grid_local`, `rgb_image`, `depth_image`, `objects`, `pose`, `gps_position`, `right_rpm`, `left_rpm`, `steering_angle`, `lanes`, `global_map`, `ref_trajectory`, `global_route`, `goal`, `control`, and `estop`. The key and rate for each one live in its module. A matching `*_ZENOH_KEY` variable overrides that module's key when set.
+
+Left out for now: `cev/sensors/lidar/raw_points`, `cev/sensors/lidar/range_graph`, `cev/sensors/magnetometer`, and `cev/sensors/camera/occupancy_grid`.
+
+`DUMMY_TOPICS` is a comma-separated list of topic names. Leave it unset to publish every registered topic. A name left off the list is not published, which leaves that key free for the real publisher. An unknown name exits. Do not run the real publisher for a key that is also on this list; the subscriber will interleave both streams.
+
+To use the real segmented-points publisher, leave `run.py` stopped, or omit `segmented_points` from `DUMMY_TOPICS`, and start the real publisher. The backend subscriber stays the same.
+
+Docker is not required to start the dummy publisher. `docker-compose.dev.yml` uses `zenoh-dev.json5`, which dials port 7449 so a backend inside Docker can receive it. A backend running on the host finds the dummy through Zenoh discovery. Port 7447 remains the real lidar publisher and 7448 remains the camera mock. With the dummy process stopped, the backend keeps retrying 7449 and otherwise behaves as before.
+
+## Frontend development reference
+
+### Getting Started
+
+This project uses **Bun** as a package manager and runtime.
+Run the following command in the frontend directory to start a dev environment.
+
+```
+bun run dev
+```
+
+This should start a dev environment at `port 5173` on your machine.
+
+Make sure to specify a `VITE_GOOGLE_MAPS_API_KEY` and a
+`VITE_GOOGLE_MAP_ID` in the root `.env` file (Vite uses `envDir: ".."`). Follow the
+format in `frontend/.env.example`. It's also listed here for reference.
+
+```env
+VITE_GOOGLE_MAPS_API_KEY=Your_Google_Maps_API_Key
+VITE_GOOGLE_MAP_ID=Your_Google_Map_ID
+```
+
+To get your own **Google Maps API** keys and map ID,\
+Head to the [Google Cloud Console](https://console.cloud.google.com/google/maps-hosted/overview),
+create a new project, and go to `Keys and Credentials` to get your Google Maps `API_KEY`or
+generate your own. Then, navigate to the `Map Management` tab, and create a new map to generate your own `MAP_ID`.\
+Refer to the [Google Maps API](https://developers.google.com/maps/documentation/javascript/get-api-key) getting
+started guide for more information.
+
+The same root `.env` is used for Compose and isolated frontend development.
+
+### Design
+
+#### React + TypeScript + Vite
+
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+
+Currently, two official plugins are available:
+
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+
+**TailwindCSS + MUICharts + DaisyUI**\
+This project utilizes these libraries for reusable components and style classes in React.
+These are especially important for the Line Charts, buttons, menus and dashboard tile components.
+
+#### React Compiler
+
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+
+#### Expanding the ESLint configuration
+
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+
+```js
+export default defineConfig([
+  globalIgnores(["dist"]),
+  {
+    files: ["**/*.{ts,tsx}"],
+    extends: [
+      // Other configs...
+
+      // Remove tseslint.configs.recommended and replace with this
+      tseslint.configs.recommendedTypeChecked,
+      // Alternatively, use this for stricter rules
+      tseslint.configs.strictTypeChecked,
+      // Optionally, add this for stylistic rules
+      tseslint.configs.stylisticTypeChecked,
+
+      // Other configs...
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+]);
+```
+
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+
+```js
+// eslint.config.js
+import reactX from "eslint-plugin-react-x";
+import reactDom from "eslint-plugin-react-dom";
+
+export default defineConfig([
+  globalIgnores(["dist"]),
+  {
+    files: ["**/*.{ts,tsx}"],
+    extends: [
+      // Other configs...
+      // Enable lint rules for React
+      reactX.configs["recommended-typescript"],
+      // Enable lint rules for React DOM
+      reactDom.configs.recommended,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+]);
+```
+## [ARCHIVED APPENDIX]
+
+## ROS Subscriber Data
+
+For the ROS 2 subscriber over LAN, connect the laptop and Jetson to the same router
+network and set the Jetson's LAN IP in `.env`:
+
+```sh
+JETSON_LAN_IP=192.168.1.2
+```
+
+Use `DISCOVERY_SERVER_IP` only if the Fast DDS discovery server is on a different
+LAN address than `JETSON_LAN_IP`.

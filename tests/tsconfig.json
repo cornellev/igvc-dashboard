@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["bun"],
+    "typeRoots": ["../frontend/node_modules/@types", "../frontend/node_modules"]
+  }
+}

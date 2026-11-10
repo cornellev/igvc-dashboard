@@ -1,4 +1,5 @@
 frontend/node_modules/
+frontend/dist/
 frontend/.env
 frontend/data/
 frontend/data/*
@@ -9,6 +10,9 @@ backend/env/
 .envrc
 .DS_Store
 backend/__pycache__
+**/__pycache__/
+*.pyc
+*.egg-info/
 .codex
 .venv
 venv

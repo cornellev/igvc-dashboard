@@ -1,0 +1,9 @@
+# The frontend image is built with ./frontend as its context, so the repo-root
+# .dockerignore does not apply here. Without this, `COPY . .` copies the host's
+# node_modules (macOS binaries, possibly from npm) over the one `bun install`
+# just made in the image, e.g. "Host version ... does not match binary version".
+node_modules
+dist
+package-lock.json
+.env
+.env.*
