@@ -6,7 +6,9 @@ Adi, Julia
 
 ---
 
-![Live Dashboard Image](frontend/public/LiveRED.png)
+**Planned UI** — target layout; not the current build.
+
+![Planned autonomy dashboard](frontend/public/planned-autonomy-dashboard.png)
 
 ---
 
